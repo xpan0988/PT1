@@ -119,6 +119,8 @@
           id: row.id,
           title: row.title,
           assigneeId: assigneeIndex,
+          assigneeUserId: row.assignee_user_id,
+          createdByUserId: row.created_by,
           dueDate: row.due_date,
           priority: row.priority || 'Medium',
           completed: !!row.completed,
@@ -216,7 +218,8 @@
           bucketName: row.bucket_name || 'group-files',
           originalName: row.original_name || row.name,
           time: formatTime(new Date(row.created_at || Date.now())),
-          createdAt: row.created_at
+          createdAt: row.created_at,
+          simulated: false
         };
       }).filter(resource => resource.senderId !== -1);
     }
@@ -365,6 +368,7 @@
           renderCompletedTasks();
           renderNearestDue();
           renderProgress();
+          renderSnapshots();
           updateStatusChips();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'alerts', filter: groupFilter }, async () => {
@@ -372,7 +376,15 @@
           await loadMessages();
           renderAlerts();
           renderChatMessages();
-          renderDashboardMeetingRecommendation();
+          renderSnapshots();
+          updateStatusChips();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_reads' }, async () => {
+          await loadAlerts();
+          await loadMessages();
+          renderAlerts();
+          renderChatMessages();
+          renderSnapshots();
           updateStatusChips();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'resources', filter: groupFilter }, async () => {
@@ -381,11 +393,13 @@
           renderResources();
           populateResourceTypeFilter();
           renderProgress();
+          renderSnapshots();
           updateStatusChips();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_blocks', filter: groupFilter }, async () => {
           await loadAvailabilityBlocks();
           renderSchedule();
+          updateStatusChips();
         });
 
       const status = await new Promise(resolve => {

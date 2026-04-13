@@ -42,7 +42,7 @@
       await loadMessages();
       closeComposerPanels();
       switchView('dashboard');
-      refreshAll();
+      refreshAlertSurfaces();
       showToast('Alert created and posted to dashboard', 'alert');
     }
 
@@ -94,6 +94,13 @@
 
       await loadAlerts();
       await loadMessages();
-      refreshAll();
+      refreshAlertSurfaces();
       showToast(`${member.name} acknowledged an alert`, 'alert');
+    }
+
+    function refreshAlertSurfaces() {
+      renderAlerts();
+      renderChatMessages();
+      renderSnapshots();
+      updateStatusChips();
     }
