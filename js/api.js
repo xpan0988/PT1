@@ -210,10 +210,94 @@
           icon: row.icon || getFileIcon((row.type || '').toLowerCase()),
           type: row.type,
           size: row.size_label || '—',
+          sizeBytes: row.size_bytes || 0,
+          mimeType: row.mime_type || '',
+          storagePath: row.storage_path || '',
+          bucketName: row.bucket_name || 'group-files',
+          originalName: row.original_name || row.name,
           time: formatTime(new Date(row.created_at || Date.now())),
           createdAt: row.created_at
         };
       }).filter(resource => resource.senderId !== -1);
+    }
+
+
+    async function uploadResourceBinary(file, groupId, userId) {
+      const bucketName = 'group-files';
+      if (!file) throw new Error('Missing file for upload');
+      if (!groupId) throw new Error('Missing group id for upload');
+      if (!userId) throw new Error('Missing user id for upload');
+
+      const sanitizedOriginalName = String(file.name || 'file')
+        .replace(/[^\w.\- ]+/g, '_')
+        .replace(/\s+/g, '_');
+      const timestamp = Date.now();
+      const storagePath = `${groupId}/${userId}/${timestamp}_${sanitizedOriginalName}`;
+
+      const { error } = await supabaseClient
+        .storage
+        .from(bucketName)
+        .upload(storagePath, file, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: false
+        });
+
+      if (error) throw error;
+
+      return {
+        bucketName,
+        storagePath,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size || 0,
+        originalName: file.name || 'file'
+      };
+    }
+
+
+    async function createResourceRecord(resourceInput) {
+      const { data, error } = await supabaseClient
+        .from('resources')
+        .insert(resourceInput)
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return data;
+    }
+
+
+    async function createFileMessage(groupId, senderUserId, fileDisplayText) {
+      const { data, error } = await supabaseClient
+        .from('messages')
+        .insert({
+          group_id: groupId,
+          sender_user_id: senderUserId,
+          type: 'file',
+          text: fileDisplayText
+        })
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return data;
+    }
+
+
+    async function getSignedResourceDownloadUrl(resource) {
+      if (!resource?.storagePath) {
+        throw new Error('Resource is missing storage path');
+      }
+
+      const bucketName = resource.bucketName || 'group-files';
+      const { data, error } = await supabaseClient
+        .storage
+        .from(bucketName)
+        .createSignedUrl(resource.storagePath, 60, {
+          download: resource.originalName || resource.name || 'download'
+        });
+
+      if (error) throw error;
+      return data?.signedUrl || '';
     }
 
 
