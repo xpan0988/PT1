@@ -48,6 +48,7 @@
       renderAlerts();
       renderTasks();
       renderCompletedTasks();
+      renderDashboardMeetingRecommendation();
       renderResources();
       populateResourceTypeFilter();
       renderNearestDue();
@@ -299,8 +300,63 @@
           </div>
         `;
       }).join('');
+
+      renderMeetingRecommendations();
+      renderDashboardMeetingRecommendation();
     }
 
+    function renderMeetingRecommendations() {
+      const wrap = document.getElementById('meetingRecommendationsWrap');
+      if (!wrap) return;
+
+      const slots = getBestMeetingSlots(3);
+      if (slots.length === 0) {
+        wrap.innerHTML = `<div class="empty-state"><div class="emo">🗓️</div>No recommended meeting slots yet</div>`;
+        return;
+      }
+
+      wrap.innerHTML = slots.map((slot, index) => `
+        <div class="resource-item">
+          <div class="resource-main">
+            <div class="resource-icon">${index === 0 ? '⭐' : '🕒'}</div>
+            <div>
+              <div class="resource-name">${slot.weekdayLabel} · ${formatHourRange(slot.startHour, slot.endHour)}</div>
+              <div class="resource-meta">${slot.availableCount}/${slot.totalMembers} members available</div>
+            </div>
+          </div>
+          <div class="resource-actions">
+            <div class="ack-list">
+              ${slot.availableMembers.map(member => `<span class="ack-pill read">${member.initials}</span>`).join('')}
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+
+    function renderDashboardMeetingRecommendation() {
+      const wrap = document.getElementById('dashboardMeetingRecommendation');
+      if (!wrap) return;
+
+      const topSlot = getRecommendedMeetingSlot();
+      if (!topSlot) {
+        wrap.innerHTML = `<div class="empty-state"><div class="emo">📅</div>No meeting recommendation yet</div>`;
+        return;
+      }
+
+      wrap.innerHTML = `
+        <div class="due-card">
+          <div class="due-left">
+            <div class="due-kicker">Best Meeting Time</div>
+            <div class="due-title">${topSlot.weekdayLabel} · ${formatHourRange(topSlot.startHour, topSlot.endHour)}</div>
+            <div class="due-meta">
+              <span>${topSlot.availableCount}/${topSlot.totalMembers} members available</span>
+              <span>${topSlot.availableMembers.map(member => member.initials).join(' · ')}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
          
 
