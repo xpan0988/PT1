@@ -1,0 +1,3671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyMesh — Student Group Board</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- =========================
+       Styles
+       Temporary: keep CSS here during phase 1 cleanup.
+       Later this whole block will move to styles.css
+       ========================= -->
+  <style>
+    :root {
+      --bg: #0f0f13;
+      --surface: #17171e;
+      --surface2: #1e1e28;
+      --surface3: #232331;
+      --border: #2a2a38;
+      --accent: #7c6af7;
+      --accent2: #f7c56a;
+      --accent3: #6af7b8;
+      --accent4: #f76a9f;
+      --text: #e8e8f0;
+      --text2: #9c9cb4;
+      --danger: #f76a6a;
+      --warning: #ffb44c;
+      --success: #6af7b8;
+      --radius: 14px;
+      --shadow: 0 10px 32px rgba(0,0,0,0.32);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15, 15, 19, 0.92);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: 72px;
+    }
+
+    .logo {
+      font-family: 'DM Serif Display', serif;
+      font-size: 24px;
+      letter-spacing: -0.4px;
+    }
+
+    .logo span {
+      color: var(--accent);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .project-tag {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text2);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .member-avatars {
+      display: flex;
+      align-items: center;
+    }
+
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 2px solid var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: #0f0f13;
+      margin-left: -6px;
+    }
+
+    .avatar:first-child {
+      margin-left: 0;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 240px 1fr 380px;
+      height: calc(100vh - 72px);
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      padding: 22px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .side-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .side-label {
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--text2);
+      text-transform: uppercase;
+      padding: 0 10px 4px;
+      font-weight: 700;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      padding: 12px;
+      color: var(--text2);
+      cursor: pointer;
+      transition: 0.2s ease;
+      user-select: none;
+    }
+
+    .nav-item:hover {
+      background: var(--surface2);
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    .nav-item.active {
+      background: rgba(124, 106, 247, 0.12);
+      border-color: rgba(124, 106, 247, 0.28);
+      color: var(--text);
+    }
+
+    .nav-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface2);
+      font-size: 15px;
+    }
+
+    .nav-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .nav-sub {
+      font-size: 11px;
+      color: var(--text2);
+    }
+
+    .side-summary {
+      margin-top: auto;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+
+    .side-summary h4 {
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .side-summary p {
+      color: var(--text2);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .main-area {
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent 120px);
+    }
+
+    .view {
+      display: none;
+      height: 100%;
+      overflow-y: auto;
+      padding: 24px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .view.active {
+      display: block;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      gap: 16px;
+    }
+
+    .section-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 28px;
+      letter-spacing: -0.4px;
+    }
+
+    .section-subtitle {
+      color: var(--text2);
+      font-size: 13px;
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    .muted-chip {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: var(--surface2);
+      white-space: nowrap;
+    }
+
+    .card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .card-subtitle {
+      font-size: 12px;
+      color: var(--text2);
+      margin-top: 4px;
+    }
+
+    .alerts-card,
+    .progress-card,
+    .upcoming-card,
+    .snapshot-card,
+    .task-form-card,
+    .list-card,
+    .timetable-card,
+    .resource-card {
+      padding: 18px;
+    }
+
+    .alerts-scroll {
+      display: flex;
+      gap: 14px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .alert-item {
+      min-width: 300px;
+      max-width: 320px;
+      background: linear-gradient(180deg, rgba(247,106,106,0.14), rgba(247,106,106,0.06));
+      border: 1px solid rgba(247,106,106,0.32);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .alert-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+    }
+
+    .alert-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(247,106,106,0.18);
+      color: #ffd5d5;
+      border: 1px solid rgba(247,106,106,0.32);
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+
+    .alert-meta {
+      text-align: right;
+      font-size: 11px;
+      color: var(--text2);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .alert-text {
+      font-size: 15px;
+      line-height: 1.55;
+      font-weight: 500;
+    }
+
+    .ack-list {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .ack-pill {
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid var(--border);
+      background: var(--surface3);
+      color: var(--text2);
+    }
+
+    .ack-pill.read {
+      background: rgba(106,247,184,0.14);
+      color: #d3ffee;
+      border-color: rgba(106,247,184,0.3);
+    }
+
+    .alert-footer {
+      font-size: 12px;
+      color: var(--text2);
+    }
+
+    .progress-layout {
+      display: grid;
+      grid-template-columns: 1.2fr 0.9fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .big-progress-bar {
+      height: 18px;
+      background: var(--bg);
+      border-radius: 999px;
+      overflow: hidden;
+      display: flex;
+      border: 1px solid var(--border);
+      margin: 16px 0 12px;
+    }
+
+    .big-progress-segment {
+      height: 100%;
+      transition: width 0.35s ease;
+    }
+
+    .progress-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0,1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .metric-box {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .member-progress-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .member-progress-item {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .member-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .member-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .member-name {
+      font-size: 13px;
+      font-weight: 700;
+      flex: 1;
+    }
+
+    .member-percent {
+      font-size: 12px;
+      color: var(--text2);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .member-mini-bar {
+      height: 7px;
+      background: var(--bg);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+
+    .member-mini-fill {
+      height: 100%;
+      border-radius: 999px;
+    }
+
+    .member-stats-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .member-stat-chip {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text2);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .due-card {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 16px;
+      background: linear-gradient(180deg, rgba(255,180,76,0.14), rgba(255,180,76,0.06));
+      border: 1px solid rgba(255,180,76,0.28);
+      border-radius: 14px;
+    }
+
+    .due-left {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .due-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: fit-content;
+      background: rgba(255,180,76,0.16);
+      border: 1px solid rgba(255,180,76,0.26);
+      color: #ffe0b5;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .due-title {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
+    .due-meta {
+      color: var(--text2);
+      font-size: 12px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .due-assignee {
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: #0f0f13;
+    }
+
+    .snapshot-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .snapshot-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: var(--surface3);
+      border: 1px solid var(--border);
+    }
+
+    .snapshot-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .snapshot-label {
+      font-size: 12px;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .snapshot-value {
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .snapshot-pill {
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 8px;
+      background: var(--bg);
+    }
+
+    .tasks-layout {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .resources-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .task-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .field-label {
+      font-size: 12px;
+      color: var(--text2);
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    select,
+    input[type="text"],
+    input[type="date"],
+    input[type="file"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 11px 13px;
+      font-size: 14px;
+      font-family: 'DM Sans', sans-serif;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    select:focus,
+    input[type="text"]:focus,
+    input[type="date"]:focus,
+    input[type="file"]:focus {
+      border-color: var(--accent);
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+        .field-row-3 {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .resource-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .resource-filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .resource-filters select,
+    .resource-filters input {
+      min-width: 170px;
+    }
+
+    .priority-pill {
+      font-weight: 700;
+    }
+
+    .priority-high {
+      color: #ffd5d5;
+      border-color: rgba(247,106,106,0.3);
+      background: rgba(247,106,106,0.14);
+    }
+
+    .priority-medium {
+      color: #ffe8c4;
+      border-color: rgba(255,180,76,0.3);
+      background: rgba(255,180,76,0.12);
+    }
+
+    .priority-low {
+      color: #d8ffee;
+      border-color: rgba(106,247,184,0.3);
+      background: rgba(106,247,184,0.12);
+    }
+
+    .task-actions-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn-small {
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+
+    .btn-danger {
+      background: rgba(247,106,106,0.14);
+      border: 1px solid rgba(247,106,106,0.28);
+      color: #ffd5d5;
+    }
+
+    .btn-danger:hover {
+      background: rgba(247,106,106,0.2);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text2);
+    }
+
+    .btn-ghost:hover {
+      border-color: rgba(124,106,247,0.35);
+      color: var(--text);
+    }
+
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 11px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.2s ease;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #8f80ff;
+    }
+
+    .btn-secondary {
+      background: var(--surface3);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: rgba(124,106,247,0.4);
+      color: var(--accent);
+    }
+
+    .btn-warning {
+      background: rgba(247,106,106,0.14);
+      border: 1px solid rgba(247,106,106,0.28);
+      color: #ffd5d5;
+    }
+
+    .task-list,
+    .resource-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .task-item {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .task-item.done {
+      opacity: 0.72;
+    }
+
+    .task-main {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .task-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .task-item.done .task-title {
+      text-decoration: line-through;
+      color: var(--text2);
+    }
+
+    .task-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .meta-pill {
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text2);
+    }
+
+    .assignee-pill {
+      color: #0f0f13;
+      font-weight: 700;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .task-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: end;
+    }
+
+    .task-status {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text2);
+    }
+
+    .task-status.done {
+      color: var(--success);
+    }
+
+    .task-status.pending {
+      color: var(--warning);
+    }
+
+    .schedule-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0,1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .day-column {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      min-height: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .day-head {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .day-name {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .day-sub {
+      font-size: 11px;
+      color: var(--text2);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .slot-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .schedule-section {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    .schedule-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: 0.18s ease;
+    }
+
+    .schedule-section-head:hover {
+      background: rgba(124,106,247,0.08);
+    }
+
+    .schedule-section-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .schedule-section-summary {
+      font-size: 11px;
+      color: var(--text2);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .schedule-section-arrow {
+      font-size: 11px;
+      color: var(--text2);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .schedule-section-body {
+      display: none;
+      padding: 0 10px 10px;
+      border-top: 1px solid var(--border);
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .schedule-section.open .schedule-section-body {
+      display: flex;
+    }
+
+    .slot-item {
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      cursor: pointer;
+      transition: 0.18s ease;
+      margin-top: 8px;
+    }
+
+    .slot-item:hover {
+      border-color: rgba(124,106,247,0.35);
+      transform: translateY(-1px);
+    }
+
+    .slot-item.selected-by-me {
+      border-color: rgba(124,106,247,0.5);
+      background: rgba(124,106,247,0.12);
+      box-shadow: inset 0 0 0 1px rgba(124,106,247,0.18);
+    }
+
+    
+
+    
+
+    .slot-time {
+      font-size: 12px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .slot-members {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .mini-member {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: #0f0f13;
+      font-weight: 700;
+    }
+
+    .meeting-card {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(106,247,184,0.28);
+      background: rgba(106,247,184,0.08);
+    }
+
+    .meeting-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .meeting-text {
+      font-size: 13px;
+      color: var(--text2);
+      line-height: 1.55;
+    }
+
+    .resource-item {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .resource-main {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex: 1;
+    }
+
+    .resource-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+    }
+
+    .resource-name {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .resource-meta {
+      font-size: 12px;
+      color: var(--text2);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    .resource-by {
+      font-size: 11px;
+      font-weight: 700;
+      color: #0f0f13;
+      border-radius: 999px;
+      padding: 6px 10px;
+      white-space: nowrap;
+    }
+
+    .chat-panel {
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      padding: 20px 18px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .chat-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+
+    .chat-subtitle {
+      font-size: 12px;
+      color: var(--text2);
+      line-height: 1.5;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .msg {
+      display: flex;
+      gap: 10px;
+    }
+
+    .msg-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #0f0f13;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .msg-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .msg-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+
+    .msg-name {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .msg-time {
+      font-size: 11px;
+      color: var(--text2);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .msg-text {
+      display: inline-block;
+      max-width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px 14px 14px 14px;
+      padding: 11px 13px;
+      font-size: 14px;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+
+    .msg.alert .msg-text {
+      background: linear-gradient(180deg, rgba(247,106,106,0.14), rgba(247,106,106,0.06));
+      border-color: rgba(247,106,106,0.3);
+    }
+
+    .msg-alert-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    .alert-inline-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: #ffd5d5;
+      border: 1px solid rgba(247,106,106,0.3);
+      background: rgba(247,106,106,0.16);
+      border-radius: 999px;
+      padding: 4px 8px;
+    }
+
+    .ack-btn {
+      border: 1px solid rgba(106,247,184,0.28);
+      background: rgba(106,247,184,0.14);
+      color: #d8ffee;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .ack-btn:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+
+    .chat-input-area {
+      padding: 16px 18px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: var(--surface);
+    }
+
+    .chat-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .chat-toolbar select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      outline: none;
+      flex-shrink: 0;
+    }
+
+    .chat-compose {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .chat-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .chat-input:focus {
+      border-color: var(--accent);
+    }
+
+    .chat-input::placeholder {
+      color: var(--text2);
+    }
+
+    .plus-menu-wrap {
+      position: relative;
+    }
+
+    .plus-btn {
+      width: 44px;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 22px;
+      cursor: pointer;
+    }
+
+    .plus-menu {
+      position: absolute;
+      bottom: calc(100% + 10px);
+      right: 0;
+      min-width: 180px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 8px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 20;
+    }
+
+    .plus-menu.open {
+      display: flex;
+    }
+
+    .menu-item {
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .menu-item:hover {
+      background: var(--surface3);
+      border-color: var(--border);
+    }
+
+    .composer-panel {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .composer-panel.open {
+      display: flex;
+    }
+
+    .composer-note {
+      font-size: 12px;
+      color: var(--text2);
+      line-height: 1.5;
+    }
+
+    .panel-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 36px 18px;
+      color: var(--text2);
+      font-size: 14px;
+    }
+
+    .empty-state .emo {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(7, 7, 10, 0.78);
+      backdrop-filter: blur(10px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 1200;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal-card {
+      width: min(560px, 100%);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .modal-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 28px;
+      letter-spacing: -0.4px;
+    }
+
+    .modal-subtitle {
+      color: var(--text2);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .segmented-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .segmented-btn {
+      border: 1px solid var(--border);
+      background: var(--surface3);
+      color: var(--text2);
+      border-radius: 12px;
+      padding: 11px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+
+    .segmented-btn.active {
+      background: rgba(124, 106, 247, 0.14);
+      border-color: rgba(124, 106, 247, 0.34);
+      color: var(--text);
+    }
+
+    .modal-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .modal-helper {
+      color: var(--text2);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .modal-error {
+      display: none;
+      border: 1px solid rgba(247,106,106,0.28);
+      background: rgba(247,106,106,0.12);
+      color: #ffd5d5;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .modal-error.open {
+      display: block;
+    }
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 999;
+    }
+
+    .toast {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      box-shadow: var(--shadow);
+      max-width: 280px;
+      animation: fadeUp 0.24s ease;
+    }
+
+    .toast.task { border-left-color: var(--accent3); }
+    .toast.file { border-left-color: var(--accent2); }
+    .toast.alert { border-left-color: var(--danger); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 999px;
+    }
+
+    @media (max-width: 1380px) {
+      .app-shell {
+        grid-template-columns: 220px 1fr 340px;
+      }
+
+      .dashboard-grid,
+      .progress-layout,
+      .tasks-layout,
+      .resources-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 1080px) {
+      body {
+        overflow: auto;
+      }
+
+      .app-shell {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      .sidebar,
+      .chat-panel {
+        border: none;
+        border-top: 1px solid var(--border);
+      }
+
+      .schedule-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- =========================
+       App Layout
+       header + sidebar + main views + chat panel
+       ========================= -->
+  <header>
+    <div class="logo">Study<span>Mesh</span></div>
+    <div class="header-right">
+      <div class="project-tag" id="headerGroupTag">Student Group Board</div>
+      <button class="btn btn-secondary btn-small" onclick="restartGroupFlow()">Restart Group Flow</button>
+      <div class="member-avatars" id="memberAvatars"></div>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="side-group">
+        <div class="side-label">Navigation</div>
+
+        <div class="nav-item active" data-view="dashboard" onclick="switchView('dashboard')">
+          <div class="nav-icon">🏠</div>
+          <div class="nav-copy">
+            <div class="nav-title">Dashboard</div>
+            <div class="nav-sub">Alerts, progress, reminders</div>
+          </div>
+        </div>
+
+        <div class="nav-item" data-view="tasks" onclick="switchView('tasks')">
+          <div class="nav-icon">✅</div>
+          <div class="nav-copy">
+            <div class="nav-title">Tasks</div>
+            <div class="nav-sub">Task board and due dates</div>
+          </div>
+        </div>
+
+        <div class="nav-item" data-view="timetable" onclick="switchView('timetable')">
+          <div class="nav-icon">🗓️</div>
+          <div class="nav-copy">
+            <div class="nav-title">Timetable</div>
+            <div class="nav-sub">Weekly availability</div>
+          </div>
+        </div>
+
+        <div class="nav-item" data-view="resources" onclick="switchView('resources')">
+          <div class="nav-icon">📁</div>
+          <div class="nav-copy">
+            <div class="nav-title">Resources</div>
+            <div class="nav-sub">Shared files and uploads</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="side-summary card">
+        <h4>Design focus</h4>
+        <p>StudyMesh prioritises deadlines, acknowledgement, shared availability, and transparent contribution for student group work.</p>
+      </div>
+    </aside>
+
+    <!-- =========================
+         Main Views
+         dashboard / tasks / timetable / resources
+         ========================= -->
+    <main class="main-area">
+      <section class="view active" id="view-dashboard">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Dashboard</div>
+            <div class="section-subtitle">Latest alerts, upcoming deadlines, contribution tracking, and team status in one place.</div>
+          </div>
+          <div class="muted-chip" id="dashboardStatusChip">Project overview</div>
+        </div>
+
+        <div class="dashboard-grid">
+          <div class="stack">
+            <div class="alerts-card card">
+              <div class="card-head">
+                <div>
+                  <div class="card-title">Alert Notice Board</div>
+                  <div class="card-subtitle">Shows newest alerts and any alert that has not yet been acknowledged by all members.</div>
+                </div>
+                <div class="muted-chip" id="alertSummaryChip">0 active alerts</div>
+              </div>
+              <div class="alerts-scroll" id="alertsScroller"></div>
+            </div>
+
+            <div class="upcoming-card card">
+              <div class="card-head">
+                <div>
+                  <div class="card-title">Nearest Due Date Reminder</div>
+                  <div class="card-subtitle">The closest unfinished task is surfaced here to keep the team aligned.</div>
+                </div>
+              </div>
+              <div id="nearestDueWrap"></div>
+            </div>
+
+            <div class="progress-card card">
+              <div class="card-head">
+                <div>
+                  <div class="card-title">Overall Progress</div>
+                  <div class="card-subtitle">Progress is based on completed tasks and uploaded files, with coloured contribution segments per member.</div>
+                </div>
+                <div class="muted-chip" id="projectProgressChip">0%</div>
+              </div>
+
+              <div class="progress-layout">
+                <div>
+                  <div class="big-progress-bar" id="overallProgressBar"></div>
+
+                  <div class="progress-metrics">
+                    <div class="metric-box">
+                      <div class="metric-label">Completed Tasks</div>
+                      <div class="metric-value" id="metricCompleted">0</div>
+                    </div>
+                    <div class="metric-box">
+                      <div class="metric-label">Uploaded Files</div>
+                      <div class="metric-value" id="metricFiles">0</div>
+                    </div>
+                    <div class="metric-box">
+                      <div class="metric-label">Contribution Units</div>
+                      <div class="metric-value" id="metricUnits">0</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="member-progress-list" id="memberProgressList"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-tasks">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Task Board</div>
+            <div class="section-subtitle">Create tasks, assign owners, set custom due dates, track in-progress work, and record completions.</div>
+          </div>
+          <div class="muted-chip" id="tasksStatusChip">0 tasks</div>
+        </div>
+
+        <div class="tasks-layout">
+          <div class="task-form-card card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Add New Task</div>
+                <div class="card-subtitle">Set a title, assign a member, and define a due date.</div>
+              </div>
+            </div>
+
+            <div class="task-form">
+              <div>
+                <div class="field-label">Task Title</div>
+                <input type="text" id="taskInput" placeholder="e.g. Design survey questions">
+              </div>
+
+                            <div class="field-row-3">
+                <div>
+                  <div class="field-label">Assigned To</div>
+                  <select id="taskAssignee"></select>
+                </div>
+                <div>
+                  <div class="field-label">Priority</div>
+                  <select id="taskPriority">
+                    <option value="High">High</option>
+                    <option value="Medium" selected>Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+                <div>
+                  <div class="field-label">Due Date</div>
+                  <input type="date" id="taskDueDate">
+                </div>
+              </div>
+
+              <button class="btn btn-primary" onclick="addTask()">Add Task</button>
+            </div>
+          </div>
+
+          <div class="stack">
+            <div class="list-card card">
+              <div class="card-head">
+                <div>
+                  <div class="card-title">In Progress Tasks</div>
+                  <div class="card-subtitle">Active tasks that are not yet complete.</div>
+                </div>
+              </div>
+              <div class="task-list" id="inProgressTasks"></div>
+            </div>
+
+            <div class="list-card card">
+              <div class="card-head">
+                <div>
+                  <div class="card-title">Completed Tasks</div>
+                  <div class="card-subtitle">Tasks that have already been finished by the team.</div>
+                </div>
+              </div>
+              <div class="task-list" id="completedTasks"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-timetable">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Weekly Timetable</div>
+            <div class="section-subtitle">Current week availability from Monday to Friday for planning team meetings and coordination windows.</div>
+          </div>
+          <div class="muted-chip">Mon–Sun · 2-hour blocks</div>
+        </div>
+
+        <div class="timetable-card card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">This Week</div>
+              <div class="card-subtitle">Each day is divided into fixed 2-hour blocks. Selected blocks are loaded from the shared group availability table.</div>
+            </div>
+          </div>
+
+          <div class="schedule-grid" id="scheduleGrid"></div>
+
+        </div>
+      </section>
+
+      <section class="view" id="view-resources">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Resources</div>
+            <div class="section-subtitle">All shared files are listed here with file name, uploader, upload time, and file type.</div>
+          </div>
+          <div class="muted-chip" id="resourcesStatusChip">0 files</div>
+        </div>
+
+        <div class="resources-layout">
+
+          <div class="resource-card card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Shared Resources</div>
+                <div class="card-subtitle">Files uploaded by the team through chat are listed here in chronological order.</div>
+              </div>
+            </div>
+                        <div class="resource-toolbar">
+              <div class="resource-filters">
+                <select id="resourceTypeFilter" onchange="renderResources()">
+                  <option value="all">All Types</option>
+                </select>
+                <input type="text" id="resourceSearchInput" placeholder="Search file name..." oninput="renderResources()">
+              </div>
+              <button class="btn btn-secondary" onclick="resetResourceFilters()">Clear Filters</button>
+            </div>
+            <div class="resource-list" id="resourceList"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- =========================
+         Chat Panel
+         messages + composers + send controls
+         ========================= -->
+    <aside class="chat-panel">
+      <div class="chat-header">
+        <div class="chat-title">Chat</div>
+        <div class="chat-subtitle">Daily discussion happens here. The plus menu expands to create alerts or upload files.</div>
+      </div>
+
+      <div class="chat-messages" id="chatMessages"></div>
+
+      <div class="chat-input-area">
+        <div class="chat-toolbar">
+          <select id="chatSender"></select>
+        </div>
+
+        <div class="composer-panel" id="alertComposer">
+          <div class="composer-note">Create an alert message. Alerts appear in chat and on the dashboard notice board. Other members must manually mark them as read.</div>
+          <input class="chat-input" id="alertInput" type="text" placeholder="Type alert content…">
+          <div class="panel-actions">
+            <button class="btn btn-secondary" onclick="closeComposerPanels()">Cancel</button>
+            <button class="btn btn-warning" onclick="createAlert()">Send Alert</button>
+          </div>
+        </div>
+
+        <div class="composer-panel" id="uploadComposer">
+          <div class="composer-note">Upload a file resource. The file will appear in chat and in the Resources page, and counts toward contribution progress.</div>
+          <input type="file" id="chatFileInput" onchange="handleChatFileInput(event)">
+          <div class="panel-actions">
+            <button class="btn btn-secondary" onclick="closeComposerPanels()">Cancel</button>
+            <button class="btn btn-primary" onclick="simulateUploadFromComposer()">Simulate Upload</button>
+          </div>
+        </div>
+
+        <div class="chat-compose">
+          <input class="chat-input" id="chatInput" type="text" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendMessage()">
+          <div class="plus-menu-wrap">
+            <button class="plus-btn" onclick="togglePlusMenu(event)">+</button>
+            <div class="plus-menu" id="plusMenu">
+              <button class="menu-item" onclick="openAlertComposer()">🚨 Create Alert</button>
+              <button class="menu-item" onclick="openUploadComposer()">📁 Upload File</button>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="sendMessage()">Send</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- =========================
+       Onboarding / Group Modal
+       create group / join group flow
+       ========================= -->
+  <div class="modal-overlay" id="groupModal">
+    <div class="modal-card">
+      <div>
+        <div class="modal-title">Welcome to StudyMesh</div>
+        <div class="modal-subtitle">Enter your name, then create a new group or join an existing one. Group access is controlled by a group name and a 6-digit password.</div>
+      </div>
+
+      <div class="segmented-toggle">
+        <button class="segmented-btn active" id="createModeBtn" onclick="setGroupMode('create')">Create Group</button>
+        <button class="segmented-btn" id="joinModeBtn" onclick="setGroupMode('join')">Join Group</button>
+      </div>
+
+      <div>
+        <div class="field-label">Your Name</div>
+        <input type="text" id="groupUserName" placeholder="e.g. Someone">
+      </div>
+
+      <div class="modal-grid">
+        <div>
+          <div class="field-label">Group Name</div>
+          <input type="text" id="groupNameInput" placeholder="e.g. INFO2222 Team number">
+        </div>
+        <div>
+          <div class="field-label">6-Digit Password</div>
+          <input type="text" id="groupPasswordInput" maxlength="6" inputmode="numeric" placeholder="e.g. 123456">
+        </div>
+      </div>
+
+      <div class="modal-helper" id="groupModeHelper">Create a new group. You will become the first member and other people can join with the same group name and password.</div>
+      <div class="modal-error" id="groupModalError"></div>
+
+      <div class="panel-actions">
+        <button class="btn btn-ghost" onclick="restartGroupFlow()">Restart Group Flow</button>
+        <button class="btn btn-primary" id="groupSubmitBtn" onclick="submitGroupFlow()">Create Group</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================
+       App Logic
+       Temporary: keep JS here during phase 1 cleanup.
+       Later this whole block will be split into config/state/api/modules.
+       ========================= -->
+  <script>
+    // =========================
+    // Config / constants
+    // =========================
+    const SUPABASE_URL = "https://hggtasggdhdgiyhatgfu.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_2n13yzDWTemoCgKeLxAZWw_cHkkG4ke";
+
+    const supabaseClient = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_ANON_KEY
+    );
+
+    const FILE_LIBRARY = [
+      { name: 'interview_notes.pdf', icon: '📄', type: 'PDF' },
+      { name: 'wireframe_v3.fig', icon: '🎨', type: 'FIG' },
+      { name: 'usability_findings.docx', icon: '📝', type: 'DOCX' },
+      { name: 'survey_results.xlsx', icon: '📋', type: 'XLSX' },
+      { name: 'meeting_summary.txt', icon: '📃', type: 'TXT' },
+      { name: 'persona_board.png', icon: '🖼️', type: 'PNG' },
+    ];
+
+    const SCHEDULE_DAYS = [
+      { weekday: 1, label: 'Monday', shortDate: 'Day 1' },
+      { weekday: 2, label: 'Tuesday', shortDate: 'Day 2' },
+      { weekday: 3, label: 'Wednesday', shortDate: 'Day 3' },
+      { weekday: 4, label: 'Thursday', shortDate: 'Day 4' },
+      { weekday: 5, label: 'Friday', shortDate: 'Day 5' },
+      { weekday: 6, label: 'Saturday', shortDate: 'Day 6' },
+      { weekday: 7, label: 'Sunday', shortDate: 'Day 7' },
+    ];
+
+    const SCHEDULE_START_HOURS = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
+
+    const SCHEDULE_SECTIONS = [
+      { key: 'morning', label: 'Morning', hours: [8, 10] },
+      { key: 'afternoon', label: 'Afternoon', hours: [12, 14, 16] },
+      { key: 'evening', label: 'Evening', hours: [18, 20, 22] },
+    ];
+
+    // =========================
+    // Global app state
+    // =========================
+    const state = {
+      currentUser: null,
+      currentGroup: null,
+      currentMembership: null,
+      currentProfile: null,
+      groupMode: 'create',
+      members: [],
+      availabilityBlocks: [],
+      openScheduleSections: {},
+      currentView: 'dashboard',
+      messages: [],
+      tasks: [],
+      resources: [],
+      alerts: [],
+      editingTaskId: null,
+      contributions: [],
+    };
+
+    let fileSeedIndex = 0;
+
+    // =========================
+    // App bootstrap
+    // =========================
+    async function init() {
+      await initAuth();
+      await ensureProfile();
+      await ensureMembershipOrShowOnboarding();
+      await loadTasks();
+      await loadAlerts();
+      await loadMessages();
+      await loadResources();
+      await loadAvailabilityBlocks();
+      updateHeaderGroupTag();
+
+      renderAvatars();
+      populateMemberSelects();
+      populateResourceTypeFilter();
+
+      seedInitialData();
+      renderSchedule();
+      refreshAll();
+
+      document.addEventListener('click', function (e) {
+        const plusWrap = document.querySelector('.plus-menu-wrap');
+        if (plusWrap && !plusWrap.contains(e.target)) {
+          document.getElementById('plusMenu').classList.remove('open');
+        }
+      });
+    }
+
+    // =========================
+    // Auth / profile / group flow
+    // =========================
+    async function initAuth() {
+      let { data: { session } } = await supabaseClient.auth.getSession();
+
+      if (!session) {
+        const { data } = await supabaseClient.auth.signInAnonymously();
+        session = data.session;
+      }
+
+      state.currentUser = session.user;
+    }
+
+    async function ensureProfile() {
+      const user = state.currentUser;
+
+      const { data } = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!data) {
+        const { data: inserted } = await supabaseClient
+          .from('profiles')
+          .insert({
+            id: user.id,
+            display_name: 'User'
+          })
+          .select()
+          .single();
+
+        state.currentProfile = inserted || { id: user.id, display_name: 'User' };
+        return;
+      }
+
+      state.currentProfile = data;
+    }
+
+    // =========================
+    // Supabase data loading
+    // =========================
+    async function loadMembers() {
+      if (!state.currentGroup) {
+        state.members = [];
+        state.contributions = [];
+        return;
+      }
+
+      const { data, error } = await supabaseClient
+        .from('group_members')
+        .select(`
+          id,
+          group_id,
+          user_id,
+          profiles:user_id (
+            id,
+            display_name
+          )
+        `)
+        .eq('group_id', state.currentGroup.id)
+        .order('joined_at', { ascending: true });
+
+      if (error) {
+        console.error('loadMembers failed', error);
+        state.members = [];
+        state.contributions = [];
+        return;
+      }
+
+      state.members = (data || []).map((row, i) => ({
+        id: i,
+        dbId: row.user_id,
+        membershipId: row.id,
+        name: row.profiles?.display_name || 'User',
+        initials: (row.profiles?.display_name || 'U').slice(0, 2).toUpperCase(),
+        color: ['#7c6af7','#f7c56a','#6af7b8','#f76a9f'][i % 4]
+      }));
+
+      state.contributions = state.members.map(() => ({
+        tasksCompleted: 0,
+        filesUploaded: 0
+      }));
+    }
+
+    async function loadMessages() {
+      if (!state.currentGroup) {
+        state.messages = [];
+        return;
+      }
+
+      const { data, error } = await supabaseClient
+        .from('messages')
+        .select('*')
+        .eq('group_id', state.currentGroup.id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('loadMessages failed', error);
+        state.messages = [];
+        return;
+      }
+
+      const dbMessages = (data || []).map(row => {
+        const senderIndex = state.members.findIndex(member => member.dbId === row.sender_user_id);
+        return {
+          id: row.id,
+          type: row.type || 'text',
+          senderId: senderIndex,
+          text: row.text,
+          time: formatTime(new Date(row.created_at || Date.now())),
+          createdAt: row.created_at,
+          alertId: null
+        };
+      }).filter(msg => msg.senderId !== -1);
+
+      const alertMessages = state.alerts
+        .map(alert => ({
+          id: `alert-message-${alert.id}`,
+          type: 'alert',
+          senderId: alert.senderId,
+          text: alert.text,
+          time: alert.time,
+          createdAt: alert.createdAt,
+          alertId: alert.id
+        }))
+        .filter(msg => msg.senderId !== -1);
+
+      state.messages = [...dbMessages, ...alertMessages].sort((a, b) => {
+        const aTime = new Date(a.createdAt || Date.now()).getTime();
+        const bTime = new Date(b.createdAt || Date.now()).getTime();
+        return aTime - bTime;
+      });
+    }
+
+    async function loadTasks() {
+      if (!state.currentGroup) {
+        state.tasks = [];
+        return;
+      }
+
+      const { data, error } = await supabaseClient
+        .from('tasks')
+        .select('*')
+        .eq('group_id', state.currentGroup.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('loadTasks failed', error);
+        state.tasks = [];
+        return;
+      }
+
+      state.tasks = (data || []).map(row => {
+        const assigneeIndex = state.members.findIndex(member => member.dbId === row.assignee_user_id);
+        return {
+          id: row.id,
+          title: row.title,
+          assigneeId: assigneeIndex,
+          dueDate: row.due_date,
+          priority: row.priority || 'Medium',
+          completed: !!row.completed,
+          createdAt: row.created_at,
+          completedAt: row.completed_at
+        };
+      }).filter(task => task.assigneeId !== -1);
+    }
+
+    async function loadAlerts() {
+      if (!state.currentGroup) {
+        state.alerts = [];
+        return;
+      }
+
+      const { data, error } = await supabaseClient
+        .from('alerts')
+        .select('*')
+        .eq('group_id', state.currentGroup.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('loadAlerts failed', error);
+        state.alerts = [];
+        return;
+      }
+
+      const { data: readRows, error: readError } = await supabaseClient
+        .from('alert_reads')
+        .select('*')
+        .in('alert_id', (data || []).map(row => row.id));
+
+      if (readError) {
+        console.error('loadAlerts read rows failed', readError);
+      }
+
+      const readsByAlert = new Map();
+      (readRows || []).forEach(row => {
+        if (!readsByAlert.has(row.alert_id)) {
+          readsByAlert.set(row.alert_id, []);
+        }
+        readsByAlert.get(row.alert_id).push(row.user_id);
+      });
+
+      state.alerts = (data || []).map(row => {
+        const senderIndex = state.members.findIndex(member => member.dbId === row.sender_user_id);
+        const acknowledgedDbIds = readsByAlert.get(row.id) || [];
+        const acknowledgedBy = acknowledgedDbIds
+          .map(dbId => state.members.findIndex(member => member.dbId === dbId))
+          .filter(index => index !== -1);
+
+        return {
+          id: row.id,
+          senderId: senderIndex,
+          text: row.text,
+          time: formatTime(new Date(row.created_at || Date.now())),
+          createdAt: row.created_at,
+          acknowledgedBy,
+        };
+      }).filter(alert => alert.senderId !== -1);
+    }
+
+    async function loadResources() {
+      if (!state.currentGroup) {
+        state.resources = [];
+        return;
+      }
+
+      const { data, error } = await supabaseClient
+        .from('resources')
+        .select('*')
+        .eq('group_id', state.currentGroup.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('loadResources failed', error);
+        state.resources = [];
+        return;
+      }
+
+      state.resources = (data || []).map(row => {
+        const senderIndex = state.members.findIndex(member => member.dbId === row.sender_user_id);
+        return {
+          id: row.id,
+          senderId: senderIndex,
+          name: row.name,
+          icon: row.icon || getFileIcon((row.type || '').toLowerCase()),
+          type: row.type,
+          size: row.size_label || '—',
+          time: formatTime(new Date(row.created_at || Date.now())),
+          createdAt: row.created_at
+        };
+      }).filter(resource => resource.senderId !== -1);
+    }
+
+    async function loadAvailabilityBlocks() {
+      if (!state.currentGroup) {
+        state.availabilityBlocks = [];
+        return;
+      }
+
+      const { data, error } = await supabaseClient
+        .from('availability_blocks')
+        .select('*')
+        .eq('group_id', state.currentGroup.id)
+        .order('weekday', { ascending: true })
+        .order('start_hour', { ascending: true });
+
+      if (error) {
+        console.error('loadAvailabilityBlocks failed', error);
+        state.availabilityBlocks = [];
+        return;
+      }
+
+      state.availabilityBlocks = data || [];
+    }
+
+
+    // =========================
+    // Timetable interactions
+    // =========================
+    async function toggleAvailabilityBlock(weekday, startHour) {
+      if (!state.currentGroup || !state.currentUser) return;
+
+      const existingBlock = state.availabilityBlocks.find(block =>
+        block.group_id === state.currentGroup.id &&
+        block.user_id === state.currentUser.id &&
+        block.weekday === weekday &&
+        block.start_hour === startHour
+      );
+
+      if (existingBlock) {
+        const { error } = await supabaseClient
+          .from('availability_blocks')
+          .delete()
+          .eq('id', existingBlock.id);
+
+        if (error) {
+          console.error('toggleAvailabilityBlock delete failed', error);
+          showToast('Failed to remove time block', 'alert');
+          return;
+        }
+      } else {
+        const { error } = await supabaseClient
+          .from('availability_blocks')
+          .insert({
+            group_id: state.currentGroup.id,
+            user_id: state.currentUser.id,
+            weekday,
+            start_hour: startHour,
+            end_hour: startHour + 2
+          });
+
+        if (error) {
+          console.error('toggleAvailabilityBlock insert failed', error);
+          showToast('Failed to save time block', 'alert');
+          return;
+        }
+      }
+
+      await loadAvailabilityBlocks();
+      renderSchedule();
+      showToast('Availability updated', 'task');
+    }
+
+    function isMyAvailabilityBlockSelected(weekday, startHour) {
+      return state.availabilityBlocks.some(block =>
+        block.group_id === state.currentGroup?.id &&
+        block.user_id === state.currentUser?.id &&
+        block.weekday === weekday &&
+        block.start_hour === startHour
+      );
+    }
+
+    function getScheduleSectionStateKey(weekday, sectionKey) {
+      return `${weekday}-${sectionKey}`;
+    }
+
+    function toggleScheduleSection(weekday, sectionKey) {
+      const stateKey = getScheduleSectionStateKey(weekday, sectionKey);
+      state.openScheduleSections[stateKey] = !state.openScheduleSections[stateKey];
+      renderSchedule();
+    }
+
+    function isScheduleSectionOpen(weekday, sectionKey) {
+      return !!state.openScheduleSections[getScheduleSectionStateKey(weekday, sectionKey)];
+    }
+
+
+    // =========================
+    // Onboarding / group membership flow
+    // =========================
+    async function ensureMembershipOrShowOnboarding() {
+      const { data, error } = await supabaseClient
+        .from('group_members')
+        .select(`
+          id,
+          group_id,
+          user_id,
+          groups:group_id (
+            id,
+            name,
+            password_hash,
+            created_by,
+            created_at
+          )
+        `)
+        .eq('user_id', state.currentUser.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('ensureMembershipOrShowOnboarding failed', error);
+      }
+
+      if (data && data.groups) {
+        state.currentMembership = data;
+        state.currentGroup = data.groups;
+        updateHeaderGroupTag();
+        document.getElementById('groupModal').classList.remove('open');
+        await loadMembers();
+        await loadTasks();
+        await loadAlerts();
+        await loadMessages();
+        await loadResources();
+        await loadAvailabilityBlocks();
+        return;
+      }
+
+      openGroupModal();
+    }
+
+    function openGroupModal() {
+      setGroupMode('create');
+      clearGroupModalError();
+      document.getElementById('groupUserName').value = state.currentProfile?.display_name || '';
+      document.getElementById('groupNameInput').value = '';
+      document.getElementById('groupPasswordInput').value = '';
+      document.getElementById('groupModal').classList.add('open');
+      document.getElementById('groupUserName').focus();
+    }
+
+    function setGroupMode(mode) {
+      state.groupMode = mode;
+      document.getElementById('createModeBtn').classList.toggle('active', mode === 'create');
+      document.getElementById('joinModeBtn').classList.toggle('active', mode === 'join');
+      document.getElementById('groupSubmitBtn').textContent = mode === 'create' ? 'Create Group' : 'Join Group';
+      document.getElementById('groupModeHelper').textContent = mode === 'create'
+        ? 'Create a new group. You will become the first member and other people can join with the same group name and password.'
+        : 'Join an existing group by entering the exact group name and matching 6-digit password.';
+      clearGroupModalError();
+    }
+
+    function showGroupModalError(message) {
+      const el = document.getElementById('groupModalError');
+      el.textContent = message;
+      el.classList.add('open');
+    }
+
+    function clearGroupModalError() {
+      const el = document.getElementById('groupModalError');
+      el.textContent = '';
+      el.classList.remove('open');
+    }
+
+    async function submitGroupFlow() {
+      const displayName = document.getElementById('groupUserName').value.trim();
+      const groupName = document.getElementById('groupNameInput').value.trim();
+      const password = document.getElementById('groupPasswordInput').value.trim();
+
+      clearGroupModalError();
+
+      if (!displayName) {
+        showGroupModalError('Please enter your name.');
+        return;
+      }
+
+      if (!groupName) {
+        showGroupModalError('Please enter a group name.');
+        return;
+      }
+
+      if (!/^\d{6}$/.test(password)) {
+        showGroupModalError('The group password must be exactly 6 digits.');
+        return;
+      }
+
+      const { data: updatedProfile, error: profileError } = await supabaseClient
+        .from('profiles')
+        .update({ display_name: displayName })
+        .eq('id', state.currentUser.id)
+        .select()
+        .single();
+
+      if (profileError) {
+        console.error('profile update failed', profileError);
+        showGroupModalError('Failed to update your profile name.');
+        return;
+      }
+
+      state.currentProfile = updatedProfile || { id: state.currentUser.id, display_name: displayName };
+
+      if (state.groupMode === 'create') {
+        await createGroupFlow(groupName, password);
+      } else {
+        await joinGroupFlow(groupName, password);
+      }
+    }
+
+    async function createGroupFlow(groupName, password) {
+      const { data: existingGroup, error: existingError } = await supabaseClient
+        .from('groups')
+        .select('*')
+        .eq('name', groupName)
+        .maybeSingle();
+
+      if (existingError) {
+        console.error('group existence check failed', existingError);
+        showGroupModalError('Failed to check whether the group already exists.');
+        return;
+      }
+
+      if (existingGroup) {
+        showGroupModalError('A group with this name already exists. Choose another name or switch to Join Group.');
+        return;
+      }
+
+      const { data: createdGroup, error: groupError } = await supabaseClient
+        .from('groups')
+        .insert({
+          name: groupName,
+          password_hash: password,
+          created_by: state.currentUser.id
+        })
+        .select()
+        .single();
+
+      if (groupError || !createdGroup) {
+        console.error('group creation failed', groupError);
+        showGroupModalError('Failed to create the group.');
+        return;
+      }
+
+      const { data: membership, error: membershipError } = await supabaseClient
+        .from('group_members')
+        .insert({
+          group_id: createdGroup.id,
+          user_id: state.currentUser.id
+        })
+        .select()
+        .single();
+
+      if (membershipError || !membership) {
+        console.error('membership creation failed', membershipError);
+        showGroupModalError('The group was created, but joining it failed.');
+        return;
+      }
+
+      state.currentGroup = createdGroup;
+      state.currentMembership = membership;
+      updateHeaderGroupTag();
+      document.getElementById('groupModal').classList.remove('open');
+      await loadMembers();
+      await loadTasks();
+      await loadAlerts();
+      await loadMessages();
+      await loadResources();
+      await loadAvailabilityBlocks();
+      renderAvatars();
+      populateMemberSelects();
+      refreshAll();
+      showToast(`Group created: ${groupName}`, 'task');
+    }
+
+    async function joinGroupFlow(groupName, password) {
+      const { data: targetGroup, error: groupError } = await supabaseClient
+        .from('groups')
+        .select('*')
+        .eq('name', groupName)
+        .maybeSingle();
+
+      if (groupError) {
+        console.error('group lookup failed', groupError);
+        showGroupModalError('Failed to look up the group.');
+        return;
+      }
+
+      if (!targetGroup) {
+        showGroupModalError('No group with this name was found.');
+        return;
+      }
+
+      if (targetGroup.password_hash !== password) {
+        showGroupModalError('The 6-digit password does not match this group.');
+        return;
+      }
+
+      const { data: existingMembers, error: memberLookupError } = await supabaseClient
+        .from('group_members')
+        .select(`
+          user_id,
+          profiles:user_id (
+            display_name
+          )
+        `)
+        .eq('group_id', targetGroup.id);
+
+      if (memberLookupError) {
+        console.error('group member lookup failed', memberLookupError);
+        showGroupModalError('Failed to check existing group members.');
+        return;
+      }
+
+      const normalizedDisplayName = (state.currentProfile?.display_name || '').trim().toLowerCase();
+      const duplicateMember = (existingMembers || []).find(row =>
+        row.user_id !== state.currentUser.id &&
+        (row.profiles?.display_name || '').trim().toLowerCase() === normalizedDisplayName
+      );
+
+      if (duplicateMember) {
+        showGroupModalError('This name is already being used in the group. Please choose a different display name before joining.');
+        return;
+      }
+
+      const { data: existingMembership } = await supabaseClient
+        .from('group_members')
+        .select('*')
+        .eq('group_id', targetGroup.id)
+        .eq('user_id', state.currentUser.id)
+        .maybeSingle();
+
+      let membership = existingMembership;
+
+      if (!membership) {
+        const { data: createdMembership, error: membershipError } = await supabaseClient
+          .from('group_members')
+          .insert({
+            group_id: targetGroup.id,
+            user_id: state.currentUser.id
+          })
+          .select()
+          .single();
+
+        if (membershipError || !createdMembership) {
+          console.error('join group membership failed', membershipError);
+          showGroupModalError('Failed to join the group.');
+          return;
+        }
+
+        membership = createdMembership;
+      }
+
+      state.currentGroup = targetGroup;
+      state.currentMembership = membership;
+      updateHeaderGroupTag();
+      document.getElementById('groupModal').classList.remove('open');
+      await loadMembers();
+      await loadTasks();
+      await loadAlerts();
+      await loadMessages();
+      await loadResources();
+      await loadAvailabilityBlocks();
+      renderAvatars();
+      populateMemberSelects();
+      refreshAll();
+      showToast(`Joined group: ${groupName}`, 'task');
+    }
+
+    function restartGroupFlow() {
+      state.currentGroup = null;
+      state.currentMembership = null;
+      state.members = [];
+      state.messages = [];
+      state.tasks = [];
+      state.resources = [];
+      state.alerts = [];
+      state.availabilityBlocks = [];
+      state.contributions = [];
+      state.editingTaskId = null;
+
+      updateHeaderGroupTag();
+      renderAvatars();
+      populateMemberSelects();
+      closeComposerPanels();
+      switchView('dashboard');
+      openGroupModal();
+      refreshAll();
+    }
+
+    // =========================
+    // UI helpers / shared rendering helpers
+    // =========================
+    function updateHeaderGroupTag() {
+      const tag = document.getElementById('headerGroupTag');
+      if (!tag) return;
+
+      if (state.currentGroup) {
+        tag.textContent = state.currentGroup.name;
+        return;
+      }
+
+      tag.textContent = 'Student Group Board';
+    }
+
+    function renderAvatars() {
+      const el = document.getElementById('memberAvatars');
+      if (state.members.length === 0) {
+        el.innerHTML = '';
+        return;
+      }
+
+      el.innerHTML = state.members.map(m =>
+        `<div class="avatar" style="background:${m.color}" title="${m.name}">${m.initials}</div>`
+      ).join('');
+    }
+
+    function populateMemberSelects() {
+      const chatSelect = document.getElementById('chatSender');
+      const taskSelect = document.getElementById('taskAssignee');
+
+      if (state.members.length === 0) {
+        chatSelect.innerHTML = '';
+        taskSelect.innerHTML = '';
+        return;
+      }
+
+      const options = state.members.map(m => `<option value="${m.id}" ${m.dbId === state.currentUser?.id ? 'selected' : ''}>${m.name}</option>`).join('');
+      chatSelect.innerHTML = options;
+      taskSelect.innerHTML = options;
+    }
+
+    function populateResourceTypeFilter() {
+      const select = document.getElementById('resourceTypeFilter');
+      if (!select) return;
+
+      const types = [...new Set([...FILE_LIBRARY.map(item => item.type), ...state.resources.map(item => item.type)])].sort();
+      const currentValue = select.value || 'all';
+
+      select.innerHTML = `<option value="all">All Types</option>` +
+        types.map(type => `<option value="${type}">${type}</option>`).join('');
+
+      if ([...select.options].some(option => option.value === currentValue)) {
+        select.value = currentValue;
+      }
+    }
+
+    function resetTaskForm() {
+      document.getElementById('taskInput').value = '';
+      document.getElementById('taskDueDate').value = '';
+      document.getElementById('taskPriority').value = 'Medium';
+      document.getElementById('taskAssignee').selectedIndex = 0;
+      state.editingTaskId = null;
+
+      const taskButton = document.querySelector('#view-tasks .btn.btn-primary');
+      if (taskButton) taskButton.textContent = 'Add Task';
+    }
+
+    function resetResourceFilters() {
+      const typeFilter = document.getElementById('resourceTypeFilter');
+      const searchInput = document.getElementById('resourceSearchInput');
+      if (typeFilter) typeFilter.value = 'all';
+      if (searchInput) searchInput.value = '';
+      renderResources();
+    }
+
+    function seedInitialData() {
+      if (state.members.length === 0 || state.tasks.length > 0 || state.resources.length > 0 || state.messages.length > 0 || state.alerts.length > 0) {
+        return;
+      }
+
+      const memberCount = state.members.length;
+      const safeMember = (index) => index % memberCount;
+
+      addTaskSeed('Create low-fi dashboard sketches', safeMember(0), 'High', offsetDate(1), true);
+
+      if (memberCount >= 2) {
+        addTaskSeed('Prepare tutorial demo notes', safeMember(1), 'High', offsetDate(4), false);
+      }
+      if (memberCount >= 3) {
+        addTaskSeed('Refine interview question wording', safeMember(2), 'Medium', offsetDate(2), false);
+      }
+      if (memberCount >= 4) {
+        addTaskSeed('Review final report structure', safeMember(3), 'Low', offsetDate(6), false);
+      }
+
+      
+    }
+
+    function switchView(view) {
+      state.currentView = view;
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.view === view);
+      });
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-' + view).classList.add('active');
+    }
+
+    function togglePlusMenu(event) {
+      event.stopPropagation();
+      document.getElementById('plusMenu').classList.toggle('open');
+    }
+
+    function openAlertComposer() {
+      closeComposerPanels();
+      document.getElementById('plusMenu').classList.remove('open');
+      document.getElementById('alertComposer').classList.add('open');
+      document.getElementById('alertInput').focus();
+    }
+
+    function openUploadComposer() {
+      closeComposerPanels();
+      document.getElementById('plusMenu').classList.remove('open');
+      document.getElementById('uploadComposer').classList.add('open');
+    }
+
+    function closeComposerPanels() {
+      document.getElementById('alertComposer').classList.remove('open');
+      document.getElementById('uploadComposer').classList.remove('open');
+    }
+
+    // =========================
+    // Chat / alert / resource actions
+    // =========================
+    async function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      if (!text || !state.currentGroup) return;
+
+      const senderId = parseInt(document.getElementById('chatSender').value, 10);
+      const sender = state.members[senderId];
+      if (!sender) return;
+
+      const { error } = await supabaseClient
+        .from('messages')
+        .insert({
+          group_id: state.currentGroup.id,
+          sender_user_id: sender.dbId,
+          type: 'text',
+          text
+        });
+
+      if (error) {
+        console.error('sendMessage failed', error);
+        showToast('Failed to send message', 'alert');
+        return;
+      }
+
+      input.value = '';
+      await loadMessages();
+      renderChatMessages();
+      showToast(`${sender.name} sent a message`, 'chat');
+    }
+
+    async function createAlert() {
+      const input = document.getElementById('alertInput');
+      const text = input.value.trim();
+      if (!text || !state.currentGroup) return;
+
+      const senderId = parseInt(document.getElementById('chatSender').value, 10);
+      const sender = state.members[senderId];
+      if (!sender) return;
+
+      const { data: insertedAlert, error } = await supabaseClient
+        .from('alerts')
+        .insert({
+          group_id: state.currentGroup.id,
+          sender_user_id: sender.dbId,
+          text
+        })
+        .select()
+        .single();
+
+      if (error || !insertedAlert) {
+        console.error('createAlert failed', error);
+        showToast('Failed to create alert', 'alert');
+        return;
+      }
+
+      const { error: readError } = await supabaseClient
+        .from('alert_reads')
+        .insert({
+          alert_id: insertedAlert.id,
+          user_id: sender.dbId
+        });
+
+      if (readError) {
+        console.error('createAlert read insert failed', readError);
+      }
+
+      input.value = '';
+      await loadAlerts();
+      await loadMessages();
+      closeComposerPanels();
+      switchView('dashboard');
+      refreshAll();
+      showToast('Alert created and posted to dashboard', 'alert');
+    }
+
+    function addAlert(senderId, text, timeLabel) {
+      const alert = {
+        id: `local-alert-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        senderId,
+        text,
+        time: timeLabel || formatTime(new Date()),
+        createdAt: new Date().toISOString(),
+        acknowledgedBy: [senderId],
+      };
+
+      state.alerts.unshift(alert);
+      state.messages.push({
+        id: 'alert-' + alert.id,
+        type: 'alert',
+        senderId,
+        text,
+        time: alert.time,
+        alertId: alert.id,
+      });
+
+      refreshAll();
+    }
+
+    async function acknowledgeAlert(alertId, memberId) {
+      const alert = state.alerts.find(a => a.id === alertId);
+      if (!alert) return;
+      if (alert.acknowledgedBy.includes(memberId)) return;
+
+      const member = state.members[memberId];
+      if (!member) return;
+
+      const { error } = await supabaseClient
+        .from('alert_reads')
+        .insert({
+          alert_id: alertId,
+          user_id: member.dbId
+        });
+
+      if (error) {
+        console.error('acknowledgeAlert failed', error);
+        showToast('Failed to acknowledge alert', 'alert');
+        return;
+      }
+
+      await loadAlerts();
+      await loadMessages();
+      refreshAll();
+      showToast(`${member.name} acknowledged an alert`, 'alert');
+    }
+
+    async function handleChatFileInput(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      const senderId = parseInt(document.getElementById('chatSender').value, 10);
+      const ext = file.name.split('.').pop().toLowerCase();
+      const icon = getFileIcon(ext);
+
+      await addResource(senderId, file.name, icon, ext.toUpperCase(), formatFileSize(file.size));
+      event.target.value = '';
+      closeComposerPanels();
+      switchView('resources');
+      showToast(`File uploaded by ${state.members[senderId]?.name || 'A member'}`, 'file');    
+    }
+
+    async function simulateUploadFromComposer() {
+      const senderId = parseInt(document.getElementById('chatSender').value, 10);
+      const item = FILE_LIBRARY[fileSeedIndex % FILE_LIBRARY.length];
+      fileSeedIndex += 1;
+
+      await addResource(senderId, item.name, item.icon, item.type, randomDemoSize());
+      closeComposerPanels();
+      switchView('resources');
+      showToast(`Simulated upload: ${item.name}`, 'file');
+    }
+
+    async function addResource(senderId, name, icon, type, size, timeLabel) {
+      if (!state.currentGroup) return;
+
+      const sender = state.members[senderId];
+      if (!sender) return;
+
+      const { error: resourceError } = await supabaseClient
+        .from('resources')
+        .insert({
+          group_id: state.currentGroup.id,
+          sender_user_id: sender.dbId,
+          name,
+          type,
+          size_label: size,
+          icon
+        });
+
+      if (resourceError) {
+        console.error('addResource failed', resourceError);
+        showToast('Failed to upload resource', 'alert');
+        return;
+      }
+
+      const { error: messageError } = await supabaseClient
+        .from('messages')
+        .insert({
+          group_id: state.currentGroup.id,
+          sender_user_id: sender.dbId,
+          type: 'file',
+          text: name
+        });
+
+      if (messageError) {
+        console.error('addResource message insert failed', messageError);
+      }
+
+      await loadResources();
+      await loadMessages();
+      refreshAll();
+    }
+
+    // =========================
+    // Task actions
+    // =========================
+    async function addTask() {
+      const title = document.getElementById('taskInput').value.trim();
+      const assigneeId = parseInt(document.getElementById('taskAssignee').value, 10);
+      const dueDate = document.getElementById('taskDueDate').value;
+      const priority = document.getElementById('taskPriority').value;
+
+      if (!title || !dueDate || !state.currentGroup) return;
+
+      const assignee = state.members[assigneeId];
+      if (!assignee) return;
+
+      if (state.editingTaskId) {
+        const task = state.tasks.find(t => t.id === state.editingTaskId);
+        if (!task) return;
+
+        const { error } = await supabaseClient
+          .from('tasks')
+          .update({
+            title,
+            assignee_user_id: assignee.dbId,
+            due_date: dueDate,
+            priority
+          })
+          .eq('id', state.editingTaskId);
+
+        if (error) {
+          console.error('updateTask failed', error);
+          showToast('Failed to update task', 'alert');
+          return;
+        }
+
+        resetTaskForm();
+        await loadTasks();
+        refreshAll();
+        showToast(`Task updated for ${state.members[assigneeId]?.name || 'A member'}`, 'task');
+        return;
+      }
+
+      const { error } = await supabaseClient
+        .from('tasks')
+        .insert({
+          group_id: state.currentGroup.id,
+          title,
+          assignee_user_id: assignee.dbId,
+          due_date: dueDate,
+          priority,
+          completed: false,
+          created_by: state.currentUser.id
+        });
+
+      if (error) {
+        console.error('addTask failed', error);
+        showToast('Failed to add task', 'alert');
+        return;
+      }
+
+      resetTaskForm();
+      await loadTasks();
+      refreshAll();
+      showToast(`Task added for ${assignee.name}`, 'task');
+    }
+
+    async function completeTask(taskId) {
+      const task = state.tasks.find(t => t.id === taskId);
+      if (!task || task.completed) return;
+
+      const completedAt = new Date().toISOString();
+
+      const { error } = await supabaseClient
+        .from('tasks')
+        .update({
+          completed: true,
+          completed_at: completedAt
+        })
+        .eq('id', taskId);
+
+      if (error) {
+        console.error('completeTask failed', error);
+        showToast('Failed to complete task', 'alert');
+        return;
+      }
+
+      await loadTasks();
+      refreshAll();
+      showToast(`${state.members[task.assigneeId]?.name || 'A member'} completed a task`, 'task');
+    }
+
+    function editTask(taskId) {
+      const task = state.tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      document.getElementById('taskInput').value = task.title;
+      document.getElementById('taskAssignee').value = String(task.assigneeId);
+      document.getElementById('taskDueDate').value = task.dueDate;
+      document.getElementById('taskPriority').value = task.priority || 'Medium';
+      state.editingTaskId = taskId;
+
+      const taskButton = document.querySelector('#view-tasks .btn.btn-primary');
+      if (taskButton) taskButton.textContent = 'Save Changes';
+
+      switchView('tasks');
+      document.getElementById('taskInput').focus();
+    }
+
+    async function deleteTask(taskId) {
+      const task = state.tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      const { error } = await supabaseClient
+        .from('tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) {
+        console.error('deleteTask failed', error);
+        showToast('Failed to delete task', 'alert');
+        return;
+      }
+
+      if (state.editingTaskId === taskId) {
+        resetTaskForm();
+      }
+
+      await loadTasks();
+      refreshAll();
+      showToast(`Task deleted: ${task.title}`, 'task');
+    }
+
+    function refreshAll() {
+      recalculateContributions();
+      renderChatMessages();
+      renderAlerts();
+      renderTasks();
+      renderCompletedTasks();
+      renderResources();
+      populateResourceTypeFilter();
+      renderNearestDue();
+      renderProgress();
+      updateStatusChips();
+    }
+
+    function recalculateContributions() {
+      state.contributions = state.members.map(member => {
+        const tasksCompleted = state.tasks.filter(task =>
+          task.completed && state.members[task.assigneeId]?.dbId === member.dbId
+        ).length;
+
+        const filesUploaded = state.resources.filter(resource =>
+          state.members[resource.senderId]?.dbId === member.dbId
+        ).length;
+
+        return {
+          tasksCompleted,
+          filesUploaded
+        };
+      });
+    }
+
+    function renderChatMessages() {
+      const wrap = document.getElementById('chatMessages');
+      if (state.messages.length === 0) {
+        wrap.innerHTML = `<div class="empty-state"><div class="emo">💬</div>No messages yet</div>`;
+        return;
+      }
+
+      const currentSenderId = parseInt(document.getElementById('chatSender').value || '0', 10);
+
+      wrap.innerHTML = state.messages.map(msg => {
+        const member = state.members[msg.senderId];
+        if (!member) return '';
+
+        if (msg.type === 'alert') {
+          const alert = state.alerts.find(a => a.id === msg.alertId);
+          const hasRead = alert ? alert.acknowledgedBy.includes(currentSenderId) : true;
+          const pendingCount = alert ? state.members.length - alert.acknowledgedBy.length : 0;
+          return `
+            <div class="msg alert">
+              <div class="msg-avatar" style="background:${member.color}">${member.initials}</div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-name" style="color:${member.color}">${member.name}</span>
+                  <span class="msg-time">${msg.time}</span>
+                </div>
+                <div class="msg-text">
+                  ${escHtml(msg.text)}
+                  <div class="msg-alert-meta">
+                    <span class="alert-inline-badge">ALERT</span>
+                    <span class="meta-pill">${alert ? alert.acknowledgedBy.length : 0}/${state.members.length} read</span>
+                    <span class="meta-pill">${pendingCount} pending</span>
+                    <button class="ack-btn" onclick="acknowledgeAlert('${msg.alertId}', ${currentSenderId})" ${hasRead ? 'disabled' : ''}>
+                      ${hasRead ? 'Acknowledged' : 'Mark as Read'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        if (msg.type === 'file') {
+          return `
+            <div class="msg file">
+              <div class="msg-avatar" style="background:${member.color}">${member.initials}</div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <span class="msg-name" style="color:${member.color}">${member.name}</span>
+                  <span class="msg-time">${msg.time}</span>
+                </div>
+                <div class="msg-text">📁 ${escHtml(msg.text)}</div>
+              </div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="msg">
+            <div class="msg-avatar" style="background:${member.color}">${member.initials}</div>
+            <div class="msg-body">
+              <div class="msg-meta">
+                <span class="msg-name" style="color:${member.color}">${member.name}</span>
+                <span class="msg-time">${msg.time}</span>
+              </div>
+              <div class="msg-text">${escHtml(msg.text)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      wrap.scrollTop = wrap.scrollHeight;
+    }
+
+    function renderAlerts() {
+      const activeAlerts = getDisplayAlerts();
+      const scroller = document.getElementById('alertsScroller');
+
+      if (activeAlerts.length === 0) {
+        scroller.innerHTML = `<div class="empty-state"><div class="emo">🔕</div>No active alerts</div>`;
+      } else {
+        scroller.innerHTML = activeAlerts.map(alert => {
+          const member = state.members[alert.senderId];
+          if (!member) return '';
+          return `
+            <div class="alert-item">
+              <div class="alert-top">
+                <div class="alert-badge">🚨 Alert Notice</div>
+                <div class="alert-meta">${member.name}<br>${alert.time}</div>
+              </div>
+              <div class="alert-text">${escHtml(alert.text)}</div>
+              <div class="ack-list">
+                ${state.members.map(m => `<span class="ack-pill ${alert.acknowledgedBy.includes(m.id) ? 'read' : ''}">${m.initials}</span>`).join('')}
+              </div>
+              <div class="alert-footer">${alert.acknowledgedBy.length}/${state.members.length} members have acknowledged this alert.</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      document.getElementById('alertSummaryChip').textContent = `${activeAlerts.length} active alerts`;
+    }
+
+    function renderTasks() {
+      const inProgress = state.tasks.filter(t => !t.completed).sort(sortByDueDateAsc);
+      renderTaskList('inProgressTasks', inProgress, false);
+    }
+
+    function renderCompletedTasks() {
+      const completed = state.tasks.filter(t => t.completed).sort(sortByDueDateAsc);
+      renderTaskList('completedTasks', completed, true);
+    }
+
+    function renderTaskList(targetId, items, showCompletedStatus) {
+      const el = document.getElementById(targetId);
+
+      if (items.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="emo">📝</div>No tasks to show</div>`;
+        return;
+      }
+
+      el.innerHTML = items.map(task => {
+        const member = state.members[task.assigneeId];
+        if (!member) return '';
+        const statusLabel = task.completed ? 'Completed' : 'In Progress';
+        const priority = task.priority || 'Medium';
+        const priorityClass = `priority-${priority.toLowerCase()}`;
+
+        return `
+          <div class="task-item ${task.completed ? 'done' : ''}">
+            <div class="task-main">
+              <div class="task-title">${escHtml(task.title)}</div>
+              <div class="task-meta">
+                <span class="meta-pill assignee-pill" style="background:${member.color}">${member.name}</span>
+                <span class="meta-pill priority-pill ${priorityClass}">${priority} Priority</span>
+                <span class="meta-pill">Due ${formatDateLabel(task.dueDate)}</span>
+                ${showCompletedStatus ? `<span class="meta-pill">${statusLabel}</span>` : ''}
+              </div>
+            </div>
+            <div class="task-actions">
+              <div class="task-status ${task.completed ? 'done' : 'pending'}">${statusLabel}</div>
+              <div class="task-actions-row">
+                ${task.completed
+                  ? `<button class="btn btn-secondary btn-small" disabled>Done</button>`
+                  : `<button class="btn btn-primary btn-small" onclick="completeTask('${task.id}')">Mark Complete</button>`
+                }
+                <button class="btn btn-secondary btn-small" onclick="editTask('${task.id}')">Edit</button>
+                <button class="btn btn-danger btn-small" onclick="deleteTask('${task.id}')">Delete</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderSchedule() {
+      const grid = document.getElementById('scheduleGrid');
+
+      grid.innerHTML = SCHEDULE_DAYS.map(day => {
+        const sectionHtml = SCHEDULE_SECTIONS.map(section => {
+          const open = isScheduleSectionOpen(day.weekday, section.key);
+
+          const sectionMembers = state.availabilityBlocks
+            .filter(block => block.weekday === day.weekday && section.hours.includes(block.start_hour))
+            .map(block => state.members.find(member => member.dbId === block.user_id))
+            .filter(Boolean);
+
+          const uniqueMembers = Array.from(new Map(sectionMembers.map(member => [member.dbId, member])).values());
+
+          const blocksHtml = section.hours.map(startHour => {
+            const endHour = startHour + 2;
+
+            const matchingBlocks = state.availabilityBlocks.filter(block =>
+              block.weekday === day.weekday && block.start_hour === startHour
+            );
+
+            const visibleMembers = matchingBlocks
+              .map(block => state.members.find(member => member.dbId === block.user_id))
+              .filter(Boolean);
+
+            const selectedByMe = isMyAvailabilityBlockSelected(day.weekday, startHour);
+
+            return `
+              <div class="slot-item ${selectedByMe ? 'selected-by-me' : ''}" onclick="toggleAvailabilityBlock(${day.weekday}, ${startHour})">
+                <div class="slot-time">${formatHourRange(startHour, endHour)}</div>
+                <div class="slot-members">
+                  ${visibleMembers.length > 0
+                    ? visibleMembers.map(member => `<span class="mini-member" style="background:${member.color}">${member.initials}</span>`).join('')
+                    : `<span class="meta-pill">No selection</span>`
+                  }
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div class="schedule-section ${open ? 'open' : ''}">
+              <div class="schedule-section-head" onclick="toggleScheduleSection(${day.weekday}, '${section.key}')">
+                <div>
+                  <div class="schedule-section-title">${section.label}</div>
+                  <div class="schedule-section-summary">${uniqueMembers.length} selected</div>
+                </div>
+                <div class="schedule-section-arrow">${open ? 'Hide' : 'Show'}</div>
+              </div>
+              <div class="schedule-section-body">
+                ${blocksHtml}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        return `
+          <div class="day-column">
+            <div class="day-head">
+              <div class="day-name">${day.label}</div>
+              <div class="day-sub">${day.shortDate}</div>
+            </div>
+            <div class="slot-list">${sectionHtml}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+         
+
+    function renderResources() {
+      const el = document.getElementById('resourceList');
+      const typeFilter = document.getElementById('resourceTypeFilter');
+      const searchInput = document.getElementById('resourceSearchInput');
+      const selectedType = typeFilter ? typeFilter.value : 'all';
+      const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+      const filteredResources = state.resources.filter(resource => {
+        const matchesType = selectedType === 'all' || resource.type === selectedType;
+        const matchesSearch = !query || resource.name.toLowerCase().includes(query);
+        return matchesType && matchesSearch;
+      });
+
+      if (filteredResources.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="emo">📂</div>No matching files found</div>`;
+        return;
+      }
+
+      el.innerHTML = filteredResources.map(resource => {
+        const member = state.members[resource.senderId];
+        if (!member) return '';
+        return `
+          <div class="resource-item">
+            <div class="resource-main">
+              <div class="resource-icon">${resource.icon}</div>
+              <div>
+                <div class="resource-name">${escHtml(resource.name)}</div>
+                <div class="resource-meta">${resource.type} · ${resource.size} · Uploaded at ${resource.time}</div>
+              </div>
+            </div>
+            <div class="resource-by" style="background:${member.color}">${member.name}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderNearestDue() {
+      const wrap = document.getElementById('nearestDueWrap');
+      const upcoming = getNearestDueTask();
+
+      if (!upcoming) {
+        wrap.innerHTML = `<div class="empty-state"><div class="emo">⏳</div>No unfinished tasks with a due date</div>`;
+        return;
+      }
+
+      const member = state.members[upcoming.assigneeId];
+      if (!member) {
+        wrap.innerHTML = `<div class="empty-state"><div class="emo">⏳</div>No member data for the nearest task</div>`;
+        return;
+      }
+
+      wrap.innerHTML = `
+        <div class="due-card">
+          <div class="due-left">
+            <div class="due-kicker">⚠ Closest Deadline</div>
+            <div class="due-title">${escHtml(upcoming.title)}</div>
+            <div class="due-meta">
+              <span>Due ${formatDateLabel(upcoming.dueDate)}</span>
+              <span>${daysUntilText(upcoming.dueDate)}</span>
+            </div>
+          </div>
+          <div class="due-assignee" style="background:${member.color}">${member.name}</div>
+        </div>
+      `;
+    }
+
+    function renderProgress() {
+      const overallBar = document.getElementById('overallProgressBar');
+      const memberList = document.getElementById('memberProgressList');
+
+      const totals = state.contributions.map(c => (c?.tasksCompleted || 0) + (c?.filesUploaded || 0));
+      const totalUnits = totals.reduce((sum, n) => sum + n, 0);
+      const completedTasks = state.tasks.filter(t => t.completed).length;
+      const uploadedFiles = state.resources.length;
+      const projectPercent = totalUnits > 0 ? 100 : 0;
+
+      overallBar.innerHTML = state.members.map((member, i) => {
+        const pct = totalUnits > 0 ? (totals[i] / totalUnits) * 100 : 0;
+        return `<div class="big-progress-segment" style="width:${pct}%;background:${member.color}"></div>`;
+      }).join('');
+
+      memberList.innerHTML = state.members.map((member, i) => {
+        const pct = totalUnits > 0 ? Math.round((totals[i] / totalUnits) * 100) : 0;
+        return `
+          <div class="member-progress-item">
+            <div class="member-top">
+              <div class="member-dot" style="background:${member.color}"></div>
+              <div class="member-name">${member.name}</div>
+              <div class="member-percent">${pct}%</div>
+            </div>
+            <div class="member-mini-bar">
+              <div class="member-mini-fill" style="width:${pct}%;background:${member.color}"></div>
+            </div>
+            <div class="member-stats-row">
+              <span class="member-stat-chip">✅ ${(state.contributions[i]?.tasksCompleted) || 0} tasks</span>
+              <span class="member-stat-chip">📁 ${(state.contributions[i]?.filesUploaded) || 0} files</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('metricCompleted').textContent = completedTasks;
+      document.getElementById('metricFiles').textContent = uploadedFiles;
+      document.getElementById('metricUnits').textContent = totalUnits;
+      document.getElementById('projectProgressChip').textContent = `${projectPercent}%`;
+
+      const taskButton = document.querySelector('#view-tasks .btn.btn-primary');
+      if (taskButton && !state.editingTaskId) {
+        taskButton.textContent = 'Add Task';
+      }
+    }
+
+    function renderSnapshots() {
+      const list = document.getElementById('snapshotList');
+      const incompleteTasks = state.tasks.filter(t => !t.completed).length;
+      const activeAlerts = getDisplayAlerts().length;
+      const nearestTask = getNearestDueTask();
+
+      list.innerHTML = `
+        <div class="snapshot-item">
+          <div class="snapshot-left">
+            <div class="snapshot-label">In Progress Tasks</div>
+            <div class="snapshot-value">${incompleteTasks}</div>
+          </div>
+          <div class="snapshot-pill">task board</div>
+        </div>
+
+        <div class="snapshot-item">
+          <div class="snapshot-left">
+            <div class="snapshot-label">Shared Resources</div>
+            <div class="snapshot-value">${state.resources.length}</div>
+          </div>
+          <div class="snapshot-pill">resource list</div>
+        </div>
+
+        <div class="snapshot-item">
+          <div class="snapshot-left">
+            <div class="snapshot-label">Active Alerts</div>
+            <div class="snapshot-value">${activeAlerts}</div>
+          </div>
+          <div class="snapshot-pill">notice board</div>
+        </div>
+
+        <div class="snapshot-item">
+          <div class="snapshot-left">
+            <div class="snapshot-label">Nearest Task</div>
+            <div class="snapshot-value">${nearestTask ? escHtml(nearestTask.title) : 'None'}</div>
+          </div>
+          <div class="snapshot-pill">deadline reminder</div>
+        </div>
+      `;
+    }
+
+    function updateStatusChips() {
+      document.getElementById('tasksStatusChip').textContent = `${state.tasks.length} tasks · ${state.tasks.filter(t => !t.completed).length} active`;
+      document.getElementById('resourcesStatusChip').textContent = `${state.resources.length} files`;
+      document.getElementById('dashboardStatusChip').textContent = state.currentGroup
+        ? `${state.currentGroup.name} · ${state.tasks.filter(t => !t.completed).length} active tasks · ${getDisplayAlerts().length} alerts`
+        : 'Project overview';
+    }
+
+    function getNearestDueTask() {
+      const upcoming = state.tasks.filter(t => !t.completed).sort(sortByDueDateAsc);
+      return upcoming[0] || null;
+    }
+
+    function getDisplayAlerts() {
+      const sorted = [...state.alerts].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      return sorted.filter((alert, index) => index === 0 || alert.acknowledgedBy.length < state.members.length);
+    }
+
+
+    function addChatMessage(senderId, text, timeLabel) {
+      state.messages.push({
+        id: Date.now() + Math.random(),
+        type: 'text',
+        senderId,
+        text,
+        time: timeLabel || formatTime(new Date()),
+      });
+    }
+
+    function addTaskSeed(title, assigneeId, priority, dueDate, completed) {
+      const task = {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        title,
+        assigneeId,
+        priority,
+        dueDate,
+        completed,
+        createdAt: new Date().toISOString(),
+        completedAt: completed ? new Date().toISOString() : null,
+      };
+
+      state.tasks.push(task);
+      if (completed) state.contributions[assigneeId].tasksCompleted += 1;
+    }
+
+    function uploadResourceSeed(senderId, name, icon, type, timeLabel) {
+      state.resources.push({
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        senderId,
+        name,
+        icon,
+        type,
+        size: randomDemoSize(),
+        time: timeLabel,
+      });
+      state.contributions[senderId].filesUploaded += 1;
+    }
+
+    function createAlertSeed(senderId, text, timeLabel, acknowledgedBy) {
+      const alertId = Date.now() + Math.floor(Math.random() * 1000);
+
+      state.alerts.push({
+        id: alertId,
+        senderId,
+        text,
+        time: timeLabel,
+        createdAt: new Date().toISOString(),
+        acknowledgedBy: [...new Set([senderId, ...acknowledgedBy])],
+      });
+
+      state.messages.push({
+        id: 'alert-' + alertId,
+        type: 'alert',
+        senderId,
+        text,
+        time: timeLabel,
+        alertId,
+      });
+
+      return alertId;
+    }
+
+    function acknowledgeAlertSeed(alertId, memberId) {
+      const alert = state.alerts.find(a => a.id === alertId);
+      if (alert && !alert.acknowledgedBy.includes(memberId)) {
+        alert.acknowledgedBy.push(memberId);
+      }
+    }
+
+    function sortByDueDateAsc(a, b) {
+      return new Date(a.dueDate) - new Date(b.dueDate);
+    }
+
+    function formatTime(date) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatDateLabel(dateStr) {
+      const date = new Date(dateStr + 'T00:00:00');
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+
+    function formatHourRange(startHour, endHour) {
+      const pad = (value) => String(value).padStart(2, '0');
+      const normalizedEnd = endHour === 24 ? '24:00' : `${pad(endHour)}:00`;
+      return `${pad(startHour)}:00–${normalizedEnd}`;
+    }
+
+    function offsetDate(days) {
+      const date = new Date();
+      date.setDate(date.getDate() + days);
+      return date.toISOString().slice(0, 10);
+    }
+
+    function daysUntilText(dateStr) {
+      const now = new Date();
+      const due = new Date(dateStr + 'T00:00:00');
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const diff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+
+      if (diff <= 0) return 'Due today';
+      if (diff === 1) return 'Due in 1 day';
+      return `Due in ${diff} days`;
+    }
+
+    function randomDemoSize() {
+      const value = Math.random() * 3.8 + 0.2;
+      return value < 1 ? `${Math.round(value * 1024)}KB` : `${value.toFixed(1)}MB`;
+    }
+
+    function formatFileSize(bytes) {
+      const mb = bytes / 1024 / 1024;
+      return mb < 1 ? `${Math.max(1, Math.round(bytes / 1024))}KB` : `${mb.toFixed(1)}MB`;
+    }
+
+    function getFileIcon(ext) {
+      const map = {
+        pdf: '📄',
+        doc: '📝',
+        docx: '📝',
+        txt: '📃',
+        xls: '📋',
+        xlsx: '📋',
+        png: '🖼️',
+        jpg: '🖼️',
+        jpeg: '🖼️',
+        fig: '🎨',
+        csv: '📊',
+        html: '🌐',
+        css: '🎨',
+        js: '💛'
+      };
+      return map[ext] || '📎';
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function showToast(message, type = 'chat') {
+      const wrap = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      wrap.appendChild(toast);
+      setTimeout(() => toast.remove(), 3200);
+    }
+
+    init();
+  </script>
+</body>
+</html>
