@@ -18,7 +18,7 @@
         return;
       }
 
-      const senderId = parseInt(document.getElementById('chatSender').value, 10);
+      const senderId = getCurrentMemberIndex();
       const sender = state.members[senderId];
       if (!sender) {
         showToast('Could not determine uploader', 'alert');

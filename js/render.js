@@ -27,17 +27,15 @@
 
 
     function populateMemberSelects() {
-      const chatSelect = document.getElementById('chatSender');
       const taskSelect = document.getElementById('taskAssignee');
+      if (!taskSelect) return;
 
       if (state.members.length === 0) {
-        chatSelect.innerHTML = '';
         taskSelect.innerHTML = '';
         return;
       }
 
       const options = state.members.map(m => `<option value="${m.id}" ${m.dbId === state.currentUser?.id ? 'selected' : ''}>${m.name}</option>`).join('');
-      chatSelect.innerHTML = options;
       taskSelect.innerHTML = options;
     }
 
@@ -82,7 +80,7 @@
         return;
       }
 
-      const currentSenderId = parseInt(document.getElementById('chatSender').value || '0', 10);
+      const currentSenderId = getCurrentMemberIndex();
 
       wrap.innerHTML = state.messages.map(msg => {
         const member = state.members[msg.senderId];
@@ -92,6 +90,7 @@
           const alert = state.alerts.find(a => a.id === msg.alertId);
           const hasRead = alert ? alert.acknowledgedBy.includes(currentSenderId) : true;
           const pendingCount = alert ? state.members.length - alert.acknowledgedBy.length : 0;
+          const canAcknowledge = currentSenderId !== -1;
           return `
             <div class="msg alert">
               <div class="msg-avatar" style="background:${member.color}">${member.initials}</div>
@@ -106,7 +105,7 @@
                     <span class="alert-inline-badge">ALERT</span>
                     <span class="meta-pill">${alert ? alert.acknowledgedBy.length : 0}/${state.members.length} read</span>
                     <span class="meta-pill">${pendingCount} pending</span>
-                    <button class="ack-btn" onclick="acknowledgeAlert('${msg.alertId}', ${currentSenderId})" ${hasRead ? 'disabled' : ''}>
+                    <button class="ack-btn" onclick="acknowledgeAlert('${msg.alertId}')" ${hasRead || !canAcknowledge ? 'disabled' : ''}>
                       ${hasRead ? 'Acknowledged' : 'Mark as Read'}
                     </button>
                   </div>
@@ -154,7 +153,7 @@
       const scroller = document.getElementById('alertsScroller');
 
       if (activeAlerts.length === 0) {
-        scroller.innerHTML = `<div class="empty-state"><div class="emo">🔕</div>No active alerts</div>`;
+        scroller.innerHTML = `<div class="empty-state"><div class="emo">🔕</div>No alerts yet</div>`;
       } else {
         scroller.innerHTML = activeAlerts.map(alert => {
           const member = state.members[alert.senderId];
@@ -175,7 +174,7 @@
         }).join('');
       }
 
-      document.getElementById('alertSummaryChip').textContent = `${activeAlerts.length} active alerts`;
+      document.getElementById('alertSummaryChip').textContent = `${activeAlerts.length} alerts`;
     }
 
 
@@ -515,7 +514,7 @@
 
         <div class="snapshot-item">
           <div class="snapshot-left">
-            <div class="snapshot-label">Active Alerts</div>
+            <div class="snapshot-label">Alerts</div>
             <div class="snapshot-value">${activeAlerts}</div>
           </div>
           <div class="snapshot-pill">notice board</div>
@@ -548,6 +547,5 @@
 
 
     function getDisplayAlerts() {
-      const sorted = [...state.alerts].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      return sorted.filter((alert, index) => index === 0 || alert.acknowledgedBy.length < state.members.length);
+      return [...state.alerts].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     }
