@@ -15,4 +15,6 @@ const state = {
       alerts: [],
       editingTaskId: null,
       contributions: [],
+      realtimeChannels: [],
+      realtimeGroupId: null,
     };
