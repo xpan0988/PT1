@@ -1,0 +1,18 @@
+// Global app state
+const state = {
+      currentUser: null,
+      currentGroup: null,
+      currentMembership: null,
+      currentProfile: null,
+      groupMode: 'create',
+      members: [],
+      availabilityBlocks: [],
+      openScheduleSections: {},
+      currentView: 'dashboard',
+      messages: [],
+      tasks: [],
+      resources: [],
+      alerts: [],
+      editingTaskId: null,
+      contributions: [],
+    };
