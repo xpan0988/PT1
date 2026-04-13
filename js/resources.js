@@ -3,13 +3,55 @@
 
     async function handleChatFileInput(event) {
       const file = event.target.files && event.target.files[0];
-      if (!file) return;
+      if (!file) {
+        showToast('Please choose a file to upload', 'alert');
+        return;
+      }
+      if (!state.currentGroup) {
+        showToast('Please join or select a group first', 'alert');
+        event.target.value = '';
+        return;
+      }
+      if (!state.currentUser) {
+        showToast('Please sign in before uploading', 'alert');
+        event.target.value = '';
+        return;
+      }
 
       const senderId = parseInt(document.getElementById('chatSender').value, 10);
-      const ext = file.name.split('.').pop().toLowerCase();
-      const icon = getFileIcon(ext);
+      const sender = state.members[senderId];
+      if (!sender) {
+        showToast('Could not determine uploader', 'alert');
+        event.target.value = '';
+        return;
+      }
 
-      await addResource(senderId, file.name, icon, ext.toUpperCase(), formatFileSize(file.size));
+      const fileType = inferFileTypeLabel(file);
+      const fileSizeLabel = formatFileSize(file.size || 0);
+      const icon = getFileIcon(fileType.toLowerCase());
+
+      try {
+        const uploadMeta = await uploadResourceBinary(file, state.currentGroup.id, state.currentUser.id);
+
+        await addResource({
+          senderId,
+          name: file.name,
+          icon,
+          type: fileType,
+          size: fileSizeLabel,
+          sizeBytes: uploadMeta.sizeBytes,
+          mimeType: uploadMeta.mimeType,
+          storagePath: uploadMeta.storagePath,
+          bucketName: uploadMeta.bucketName,
+          originalName: uploadMeta.originalName
+        });
+      } catch (error) {
+        console.error('handleChatFileInput failed', error);
+        showToast('Failed to upload file', 'alert');
+        event.target.value = '';
+        return;
+      }
+
       event.target.value = '';
       closeComposerPanels();
       switchView('resources');
@@ -22,47 +64,53 @@
       const item = FILE_LIBRARY[fileSeedIndex % FILE_LIBRARY.length];
       fileSeedIndex += 1;
 
-      await addResource(senderId, item.name, item.icon, item.type, randomDemoSize());
+      await addResource({
+        senderId,
+        name: item.name,
+        icon: item.icon,
+        type: item.type,
+        size: randomDemoSize(),
+        sizeBytes: 0,
+        mimeType: '',
+        storagePath: '',
+        bucketName: 'group-files',
+        originalName: item.name,
+        skipFileMessage: false
+      });
       closeComposerPanels();
       switchView('resources');
       showToast(`Simulated upload: ${item.name}`, 'file');
     }
 
 
-    async function addResource(senderId, name, icon, type, size, timeLabel) {
+    async function addResource(resourceInput) {
       if (!state.currentGroup) return;
 
-      const sender = state.members[senderId];
+      const sender = state.members[resourceInput.senderId];
       if (!sender) return;
 
-      const { error: resourceError } = await supabaseClient
-        .from('resources')
-        .insert({
+      try {
+        await createResourceRecord({
           group_id: state.currentGroup.id,
           sender_user_id: sender.dbId,
-          name,
-          type,
-          size_label: size,
-          icon
+          name: resourceInput.name,
+          original_name: resourceInput.originalName || resourceInput.name,
+          type: resourceInput.type,
+          size_label: resourceInput.size,
+          size_bytes: resourceInput.sizeBytes || 0,
+          mime_type: resourceInput.mimeType || '',
+          storage_path: resourceInput.storagePath || '',
+          bucket_name: resourceInput.bucketName || 'group-files',
+          icon: resourceInput.icon
         });
 
-      if (resourceError) {
-        console.error('addResource failed', resourceError);
+        if (!resourceInput.skipFileMessage) {
+          await createFileMessage(state.currentGroup.id, sender.dbId, resourceInput.name);
+        }
+      } catch (error) {
+        console.error('addResource failed', error);
         showToast('Failed to upload resource', 'alert');
         return;
-      }
-
-      const { error: messageError } = await supabaseClient
-        .from('messages')
-        .insert({
-          group_id: state.currentGroup.id,
-          sender_user_id: sender.dbId,
-          type: 'file',
-          text: name
-        });
-
-      if (messageError) {
-        console.error('addResource message insert failed', messageError);
       }
 
       await loadResources();
@@ -93,4 +141,35 @@
       if (typeFilter) typeFilter.value = 'all';
       if (searchInput) searchInput.value = '';
       renderResources();
+    }
+
+
+    function inferFileTypeLabel(file) {
+      const name = file?.name || '';
+      const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+      return ext ? ext.toUpperCase() : 'FILE';
+    }
+
+
+    async function downloadResource(resourceId) {
+      const resource = state.resources.find(item => String(item.id) === String(resourceId));
+      if (!resource) {
+        showToast('Resource not found', 'alert');
+        return;
+      }
+      if (!resource.storagePath) {
+        showToast('Download is unavailable for this resource', 'alert');
+        return;
+      }
+
+      try {
+        const signedUrl = await getSignedResourceDownloadUrl(resource);
+        if (!signedUrl) {
+          throw new Error('Empty signed URL');
+        }
+        window.open(signedUrl, '_blank', 'noopener');
+      } catch (error) {
+        console.error('downloadResource failed', error);
+        showToast('Failed to generate download link', 'alert');
+      }
     }

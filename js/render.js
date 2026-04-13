@@ -334,7 +334,13 @@
                 <div class="resource-meta">${resource.type} · ${resource.size} · Uploaded at ${resource.time}</div>
               </div>
             </div>
-            <div class="resource-by" style="background:${member.color}">${member.name}</div>
+            <div class="resource-actions">
+              ${resource.storagePath
+                ? `<button class="btn btn-secondary btn-small" onclick="downloadResource('${resource.id}')">Download</button>`
+                : ''
+              }
+              <div class="resource-by" style="background:${member.color}">${member.name}</div>
+            </div>
           </div>
         `;
       }).join('');
