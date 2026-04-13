@@ -53,7 +53,6 @@
       populateResourceTypeFilter();
       renderNearestDue();
       renderProgress();
-      renderSnapshots();
       updateStatusChips();
     }
 
@@ -65,7 +64,6 @@
         ).length;
 
         const filesUploaded = state.resources.filter(resource =>
-          !resource.simulated &&
           state.members[resource.senderId]?.dbId === member.dbId
         ).length;
 
@@ -452,7 +450,7 @@
       const totals = state.contributions.map(c => (c?.tasksCompleted || 0) + (c?.filesUploaded || 0));
       const totalUnits = totals.reduce((sum, n) => sum + n, 0);
       const completedTasks = state.tasks.filter(t => t.completed).length;
-      const uploadedFiles = state.resources.filter(resource => !resource.simulated).length;
+      const uploadedFiles = state.resources.length;
 
       overallBar.innerHTML = state.members.map((member, i) => {
         const pct = totalUnits > 0 ? (totals[i] / totalUnits) * 100 : 0;
@@ -493,6 +491,7 @@
 
     function renderSnapshots() {
       const list = document.getElementById('snapshotList');
+      if (!list) return;
       const incompleteTasks = state.tasks.filter(t => !t.completed).length;
       const activeAlerts = getDisplayAlerts().length;
       const nearestTask = getNearestDueTask();
@@ -509,7 +508,7 @@
         <div class="snapshot-item">
           <div class="snapshot-left">
             <div class="snapshot-label">Shared Resources</div>
-            <div class="snapshot-value">${state.resources.filter(resource => !resource.simulated).length}</div>
+            <div class="snapshot-value">${state.resources.length}</div>
           </div>
           <div class="snapshot-pill">resource list</div>
         </div>
@@ -535,7 +534,7 @@
 
     function updateStatusChips() {
       document.getElementById('tasksStatusChip').textContent = `${state.tasks.length} tasks · ${state.tasks.filter(t => !t.completed).length} active`;
-      document.getElementById('resourcesStatusChip').textContent = `${state.resources.filter(resource => !resource.simulated).length} files`;
+      document.getElementById('resourcesStatusChip').textContent = `${state.resources.length} files`;
       document.getElementById('dashboardStatusChip').textContent = state.currentGroup
         ? `${state.currentGroup.name} · ${state.tasks.filter(t => !t.completed).length} active tasks · ${getDisplayAlerts().length} alerts`
         : 'Project overview';

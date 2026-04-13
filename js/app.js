@@ -8,12 +8,12 @@
     // Global app state
     // =========================
     
-let fileSeedIndex = 0;
-
     // =========================
     // App bootstrap
     // =========================
     async function init() {
+      // Note: run StudyMesh from a local HTTP server (for example http://localhost),
+      // not from file://, so browser auth/storage APIs can work correctly.
       await initAuth();
       await ensureProfile();
       await ensureMembershipOrShowOnboarding();
@@ -163,19 +163,6 @@ let fileSeedIndex = 0;
       if (completed) state.contributions[assigneeId].tasksCompleted += 1;
     }
 
-    function uploadResourceSeed(senderId, name, icon, type, timeLabel) {
-      state.resources.push({
-        id: Date.now() + Math.floor(Math.random() * 1000),
-        senderId,
-        name,
-        icon,
-        type,
-        size: randomDemoSize(),
-        time: timeLabel,
-      });
-      state.contributions[senderId].filesUploaded += 1;
-    }
-
     function createAlertSeed(senderId, text, timeLabel, acknowledgedBy) {
       const alertId = Date.now() + Math.floor(Math.random() * 1000);
 
@@ -266,11 +253,6 @@ let fileSeedIndex = 0;
       const m = String(date.getMonth() + 1).padStart(2, '0');
       const d = String(date.getDate()).padStart(2, '0');
       return `${y}-${m}-${d}`;
-    }
-
-    function randomDemoSize() {
-      const value = Math.random() * 3.8 + 0.2;
-      return value < 1 ? `${Math.round(value * 1024)}KB` : `${value.toFixed(1)}MB`;
     }
 
     function formatFileSize(bytes) {

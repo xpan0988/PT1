@@ -59,36 +59,6 @@
     }
 
 
-    async function simulateUploadFromComposer() {
-      const senderId = parseInt(document.getElementById('chatSender').value, 10);
-      const item = FILE_LIBRARY[fileSeedIndex % FILE_LIBRARY.length];
-      fileSeedIndex += 1;
-      const sender = state.members[senderId];
-      if (!sender) return;
-
-      state.resources.unshift({
-        id: `sim-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        senderId,
-        name: item.name,
-        icon: item.icon,
-        type: item.type,
-        size: randomDemoSize(),
-        sizeBytes: 0,
-        mimeType: 'application/x-demo',
-        storagePath: '',
-        bucketName: 'group-files',
-        originalName: item.name,
-        time: formatTime(new Date()),
-        createdAt: new Date().toISOString(),
-        simulated: true
-      });
-      refreshAll();
-      closeComposerPanels();
-      switchView('resources');
-      showToast(`Simulated upload: ${item.name}`, 'file');
-    }
-
-
     async function addResource(resourceInput) {
       if (!state.currentGroup) return;
 
@@ -129,7 +99,7 @@
       const select = document.getElementById('resourceTypeFilter');
       if (!select) return;
 
-      const types = [...new Set([...FILE_LIBRARY.map(item => item.type), ...state.resources.map(item => item.type)])].sort();
+      const types = [...new Set(state.resources.map(item => item.type).filter(Boolean))].sort();
       const currentValue = select.value || 'all';
 
       select.innerHTML = `<option value="all">All Types</option>` +
