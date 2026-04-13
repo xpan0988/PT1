@@ -7,6 +7,11 @@
       const priority = document.getElementById('taskPriority').value;
 
       if (!title || !dueDate || !state.currentGroup) return;
+      if (!isValidDueDateInput(dueDate)) {
+        showToast('Please use a valid due date (YYYY-MM-DD)', 'alert');
+        return;
+      }
+      const normalizedDueDate = toIsoDateInput(parseDateInputToDate(dueDate));
 
       const assignee = state.members[assigneeId];
       if (!assignee) return;
@@ -14,13 +19,18 @@
       if (state.editingTaskId) {
         const task = state.tasks.find(t => t.id === state.editingTaskId);
         if (!task) return;
+        if (!canEditTask(task)) {
+          showToast('You can only edit tasks you created', 'alert');
+          resetTaskForm();
+          return;
+        }
 
         const { error } = await supabaseClient
           .from('tasks')
           .update({
             title,
             assignee_user_id: assignee.dbId,
-            due_date: dueDate,
+            due_date: normalizedDueDate,
             priority
           })
           .eq('id', state.editingTaskId);
@@ -44,7 +54,7 @@
           group_id: state.currentGroup.id,
           title,
           assignee_user_id: assignee.dbId,
-          due_date: dueDate,
+          due_date: normalizedDueDate,
           priority,
           completed: false,
           created_by: state.currentUser.id
@@ -68,6 +78,10 @@
       if (!task || task.completed) return;
 
       const completedAt = new Date().toISOString();
+      if (!canCompleteTask(task)) {
+        showToast('Only the creator or assignee can complete this task', 'alert');
+        return;
+      }
 
       const { error } = await supabaseClient
         .from('tasks')
@@ -92,10 +106,14 @@
     function editTask(taskId) {
       const task = state.tasks.find(t => t.id === taskId);
       if (!task) return;
+      if (!canEditTask(task)) {
+        showToast('You can only edit tasks you created', 'alert');
+        return;
+      }
 
       document.getElementById('taskInput').value = task.title;
       document.getElementById('taskAssignee').value = String(task.assigneeId);
-      document.getElementById('taskDueDate').value = task.dueDate;
+      document.getElementById('taskDueDate').value = isValidDueDateInput(task.dueDate) ? task.dueDate : '';
       document.getElementById('taskPriority').value = task.priority || 'Medium';
       state.editingTaskId = taskId;
 
@@ -116,4 +134,14 @@
 
       const taskButton = document.querySelector('#view-tasks .btn.btn-primary');
       if (taskButton) taskButton.textContent = 'Add Task';
+    }
+
+    function canEditTask(task) {
+      if (!task || !state.currentUser?.id) return false;
+      return task.createdByUserId === state.currentUser.id;
+    }
+
+    function canCompleteTask(task) {
+      if (!task || !state.currentUser?.id) return false;
+      return task.assigneeUserId === state.currentUser.id || canEditTask(task);
     }

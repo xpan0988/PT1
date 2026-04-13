@@ -48,11 +48,12 @@
       renderAlerts();
       renderTasks();
       renderCompletedTasks();
-      renderDashboardMeetingRecommendation();
+      syncMeetingRecommendationUI();
       renderResources();
       populateResourceTypeFilter();
       renderNearestDue();
       renderProgress();
+      renderSnapshots();
       updateStatusChips();
     }
 
@@ -64,6 +65,7 @@
         ).length;
 
         const filesUploaded = state.resources.filter(resource =>
+          !resource.simulated &&
           state.members[resource.senderId]?.dbId === member.dbId
         ).length;
 
@@ -222,10 +224,15 @@
               <div class="task-actions-row">
                 ${task.completed
                   ? `<button class="btn btn-secondary btn-small" disabled>Done</button>`
-                  : `<button class="btn btn-primary btn-small" onclick="completeTask('${task.id}')">Mark Complete</button>`
+                  : (canCompleteTask(task)
+                    ? `<button class="btn btn-primary btn-small" onclick="completeTask('${task.id}')">Mark Complete</button>`
+                    : `<button class="btn btn-secondary btn-small" disabled>Mark Complete</button>`)
                 }
-                <button class="btn btn-secondary btn-small" onclick="editTask('${task.id}')">Edit</button>
-                <button class="btn btn-danger btn-small" onclick="deleteTask('${task.id}')">Delete</button>
+                ${canEditTask(task)
+                  ? `<button class="btn btn-secondary btn-small" onclick="editTask('${task.id}')">Edit</button>
+                     <button class="btn btn-danger btn-small" onclick="deleteTask('${task.id}')">Delete</button>`
+                  : ''
+                }
               </div>
             </div>
           </div>
@@ -301,6 +308,10 @@
         `;
       }).join('');
 
+      syncMeetingRecommendationUI();
+    }
+
+    function syncMeetingRecommendationUI() {
       renderMeetingRecommendations();
       renderDashboardMeetingRecommendation();
     }
@@ -441,8 +452,7 @@
       const totals = state.contributions.map(c => (c?.tasksCompleted || 0) + (c?.filesUploaded || 0));
       const totalUnits = totals.reduce((sum, n) => sum + n, 0);
       const completedTasks = state.tasks.filter(t => t.completed).length;
-      const uploadedFiles = state.resources.length;
-      const projectPercent = totalUnits > 0 ? 100 : 0;
+      const uploadedFiles = state.resources.filter(resource => !resource.simulated).length;
 
       overallBar.innerHTML = state.members.map((member, i) => {
         const pct = totalUnits > 0 ? (totals[i] / totalUnits) * 100 : 0;
@@ -472,7 +482,7 @@
       document.getElementById('metricCompleted').textContent = completedTasks;
       document.getElementById('metricFiles').textContent = uploadedFiles;
       document.getElementById('metricUnits').textContent = totalUnits;
-      document.getElementById('projectProgressChip').textContent = `${projectPercent}%`;
+      document.getElementById('projectProgressChip').textContent = totalUnits > 0 ? 'Active' : '0%';
 
       const taskButton = document.querySelector('#view-tasks .btn.btn-primary');
       if (taskButton && !state.editingTaskId) {
@@ -499,7 +509,7 @@
         <div class="snapshot-item">
           <div class="snapshot-left">
             <div class="snapshot-label">Shared Resources</div>
-            <div class="snapshot-value">${state.resources.length}</div>
+            <div class="snapshot-value">${state.resources.filter(resource => !resource.simulated).length}</div>
           </div>
           <div class="snapshot-pill">resource list</div>
         </div>
@@ -525,7 +535,7 @@
 
     function updateStatusChips() {
       document.getElementById('tasksStatusChip').textContent = `${state.tasks.length} tasks · ${state.tasks.filter(t => !t.completed).length} active`;
-      document.getElementById('resourcesStatusChip').textContent = `${state.resources.length} files`;
+      document.getElementById('resourcesStatusChip').textContent = `${state.resources.filter(resource => !resource.simulated).length} files`;
       document.getElementById('dashboardStatusChip').textContent = state.currentGroup
         ? `${state.currentGroup.name} · ${state.tasks.filter(t => !t.completed).length} active tasks · ${getDisplayAlerts().length} alerts`
         : 'Project overview';

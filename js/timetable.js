@@ -41,6 +41,8 @@
 
       await loadAvailabilityBlocks();
       renderSchedule();
+      syncMeetingRecommendationUI();
+      renderSnapshots();
       showToast('Availability updated', 'task');
     }
 

@@ -112,6 +112,10 @@ let fileSeedIndex = 0;
     async function deleteTask(taskId) {
       const task = state.tasks.find(t => t.id === taskId);
       if (!task) return;
+      if (!canEditTask(task)) {
+        showToast('You can only delete tasks you created', 'alert');
+        return;
+      }
 
       const { error } = await supabaseClient
         .from('tasks')
@@ -204,7 +208,7 @@ let fileSeedIndex = 0;
     }
 
     function sortByDueDateAsc(a, b) {
-      return new Date(a.dueDate) - new Date(b.dueDate);
+      return parseDateInputToDate(a.dueDate) - parseDateInputToDate(b.dueDate);
     }
 
     function formatTime(date) {
@@ -212,7 +216,8 @@ let fileSeedIndex = 0;
     }
 
     function formatDateLabel(dateStr) {
-      const date = new Date(dateStr + 'T00:00:00');
+      const date = parseDateInputToDate(dateStr);
+      if (Number.isNaN(date.getTime())) return 'Invalid date';
       return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     }
 
@@ -230,13 +235,37 @@ let fileSeedIndex = 0;
 
     function daysUntilText(dateStr) {
       const now = new Date();
-      const due = new Date(dateStr + 'T00:00:00');
+      const due = parseDateInputToDate(dateStr);
+      if (Number.isNaN(due.getTime())) return 'Due date unavailable';
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const diff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
 
       if (diff <= 0) return 'Due today';
       if (diff === 1) return 'Due in 1 day';
       return `Due in ${diff} days`;
+    }
+
+    function isValidDueDateInput(dateStr) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr || ''))) return false;
+      const date = parseDateInputToDate(dateStr);
+      return !Number.isNaN(date.getTime()) && toIsoDateInput(date) === dateStr;
+    }
+
+    function parseDateInputToDate(dateStr) {
+      const match = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) return new Date('invalid');
+      const year = Number(match[1]);
+      const monthIndex = Number(match[2]) - 1;
+      const day = Number(match[3]);
+      return new Date(year, monthIndex, day);
+    }
+
+    function toIsoDateInput(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
     }
 
     function randomDemoSize() {

@@ -63,20 +63,26 @@
       const senderId = parseInt(document.getElementById('chatSender').value, 10);
       const item = FILE_LIBRARY[fileSeedIndex % FILE_LIBRARY.length];
       fileSeedIndex += 1;
+      const sender = state.members[senderId];
+      if (!sender) return;
 
-      await addResource({
+      state.resources.unshift({
+        id: `sim-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         senderId,
         name: item.name,
         icon: item.icon,
         type: item.type,
         size: randomDemoSize(),
         sizeBytes: 0,
-        mimeType: '',
+        mimeType: 'application/x-demo',
         storagePath: '',
         bucketName: 'group-files',
         originalName: item.name,
-        skipFileMessage: false
+        time: formatTime(new Date()),
+        createdAt: new Date().toISOString(),
+        simulated: true
       });
+      refreshAll();
       closeComposerPanels();
       switchView('resources');
       showToast(`Simulated upload: ${item.name}`, 'file');
