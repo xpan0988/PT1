@@ -396,9 +396,13 @@
           renderSnapshots();
           updateStatusChips();
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_blocks', filter: groupFilter }, async () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_blocks' }, async (payload) => {
+          const payloadGroupId = payload?.new?.group_id || payload?.old?.group_id;
+          if (payloadGroupId && payloadGroupId !== state.currentGroup?.id) return;
           await loadAvailabilityBlocks();
           renderSchedule();
+          syncMeetingRecommendationUI();
+          renderSnapshots();
           updateStatusChips();
         });
 

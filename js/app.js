@@ -147,6 +147,10 @@
       });
     }
 
+    function getCurrentMemberIndex() {
+      return state.members.findIndex(member => member.dbId === state.currentUser?.id);
+    }
+
     function addTaskSeed(title, assigneeId, priority, dueDate, completed) {
       const task = {
         id: Date.now() + Math.floor(Math.random() * 1000),

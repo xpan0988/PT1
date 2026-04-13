@@ -6,7 +6,7 @@
       const text = input.value.trim();
       if (!text || !state.currentGroup) return;
 
-      const senderId = parseInt(document.getElementById('chatSender').value, 10);
+      const senderId = getCurrentMemberIndex();
       const sender = state.members[senderId];
       if (!sender) return;
 
@@ -71,7 +71,7 @@
     }
 
 
-    async function acknowledgeAlert(alertId, memberId) {
+    async function acknowledgeAlert(alertId, memberId = getCurrentMemberIndex()) {
       const alert = state.alerts.find(a => a.id === alertId);
       if (!alert) return;
       if (alert.acknowledgedBy.includes(memberId)) return;

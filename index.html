@@ -92,9 +92,9 @@
               <div class="card-head">
                 <div>
                   <div class="card-title">Alert Notice Board</div>
-                  <div class="card-subtitle">Shows newest alerts and any alert that has not yet been acknowledged by all members.</div>
+                  <div class="card-subtitle">Shows all alerts in newest-first order so recent items stay visible.</div>
                 </div>
-                <div class="muted-chip" id="alertSummaryChip">0 active alerts</div>
+                <div class="muted-chip" id="alertSummaryChip">0 alerts</div>
               </div>
               <div class="alerts-scroll" id="alertsScroller"></div>
             </div>
@@ -295,10 +295,6 @@
       <div class="chat-messages" id="chatMessages"></div>
 
       <div class="chat-input-area">
-        <div class="chat-toolbar">
-          <select id="chatSender"></select>
-        </div>
-
         <div class="composer-panel" id="alertComposer">
           <div class="composer-note">Create an alert message. Alerts appear in chat and on the dashboard notice board. Other members must manually mark them as read.</div>
           <input class="chat-input" id="alertInput" type="text" placeholder="Type alert content…">

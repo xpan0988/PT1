@@ -5,7 +5,7 @@
       const text = input.value.trim();
       if (!text || !state.currentGroup) return;
 
-      const senderId = parseInt(document.getElementById('chatSender').value, 10);
+      const senderId = getCurrentMemberIndex();
       const sender = state.members[senderId];
       if (!sender) return;
 
