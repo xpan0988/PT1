@@ -71,9 +71,11 @@
         await loadMessages();
         await loadResources();
         await loadAvailabilityBlocks();
+        await ensureGroupRealtimeSubscription();
         return;
       }
 
+      await unsubscribeRealtime();
       openGroupModal();
     }
 
@@ -219,6 +221,7 @@
       await loadMessages();
       await loadResources();
       await loadAvailabilityBlocks();
+      await ensureGroupRealtimeSubscription();
       renderAvatars();
       populateMemberSelects();
       refreshAll();
@@ -314,6 +317,7 @@
       await loadMessages();
       await loadResources();
       await loadAvailabilityBlocks();
+      await ensureGroupRealtimeSubscription();
       renderAvatars();
       populateMemberSelects();
       refreshAll();
@@ -321,7 +325,10 @@
     }
 
 
-    function restartGroupFlow() {
+    async function restartGroupFlow() {
+      // Group flow reset must clear realtime channels to prevent stale callbacks.
+      await unsubscribeRealtime();
+
       state.currentGroup = null;
       state.currentMembership = null;
       state.members = [];

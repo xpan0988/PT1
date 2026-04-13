@@ -17,6 +17,8 @@ let fileSeedIndex = 0;
       await initAuth();
       await ensureProfile();
       await ensureMembershipOrShowOnboarding();
+      // Subscribe after membership/group is known; helper guards against duplicates.
+      await ensureGroupRealtimeSubscription();
       await loadTasks();
       await loadAlerts();
       await loadMessages();
@@ -38,6 +40,13 @@ let fileSeedIndex = 0;
           document.getElementById('plusMenu').classList.remove('open');
         }
       });
+    }
+
+
+
+    async function ensureGroupRealtimeSubscription() {
+      if (!state.currentGroup?.id || !state.currentMembership) return;
+      await subscribeToGroupRealtime(state.currentGroup.id);
     }
 
     // =========================

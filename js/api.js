@@ -322,3 +322,82 @@
 
       state.availabilityBlocks = data || [];
     }
+
+
+    async function unsubscribeRealtime() {
+      const activeChannels = Array.isArray(state.realtimeChannels) ? state.realtimeChannels : [];
+
+      if (activeChannels.length === 0) {
+        state.realtimeChannels = [];
+        state.realtimeGroupId = null;
+        return;
+      }
+
+      await Promise.allSettled(activeChannels.map(channel => supabaseClient.removeChannel(channel)));
+
+      state.realtimeChannels = [];
+      state.realtimeGroupId = null;
+    }
+
+
+    async function subscribeToGroupRealtime(groupId) {
+      if (!groupId) return;
+
+      // Avoid duplicate subscriptions when init/group flow runs more than once for the same group.
+      if (state.realtimeGroupId === groupId && state.realtimeChannels.length > 0) {
+        return;
+      }
+
+      // Always clear stale channels before creating new group-scoped subscriptions.
+      await unsubscribeRealtime();
+
+      const groupFilter = `group_id=eq.${groupId}`;
+      const channel = supabaseClient
+        .channel(`group-realtime:${groupId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: groupFilter }, async () => {
+          await loadMessages();
+          renderChatMessages();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: groupFilter }, async () => {
+          await loadTasks();
+          recalculateContributions();
+          renderTasks();
+          renderCompletedTasks();
+          renderNearestDue();
+          renderProgress();
+          updateStatusChips();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alerts', filter: groupFilter }, async () => {
+          await loadAlerts();
+          await loadMessages();
+          renderAlerts();
+          renderChatMessages();
+          renderDashboardMeetingRecommendation();
+          updateStatusChips();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'resources', filter: groupFilter }, async () => {
+          await loadResources();
+          recalculateContributions();
+          renderResources();
+          populateResourceTypeFilter();
+          renderProgress();
+          updateStatusChips();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_blocks', filter: groupFilter }, async () => {
+          await loadAvailabilityBlocks();
+          renderSchedule();
+        });
+
+      const status = await new Promise(resolve => {
+        channel.subscribe((nextStatus) => resolve(nextStatus));
+      });
+
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        console.error('subscribeToGroupRealtime failed', status);
+        await supabaseClient.removeChannel(channel);
+        return;
+      }
+
+      state.realtimeChannels = [channel];
+      state.realtimeGroupId = groupId;
+    }
