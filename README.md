@@ -1,6 +1,3 @@
-# StudyMesh
-
-StudyMesh is a browser-based student group collaboration prototype for coordinating group tasks, shared resources, alerts, timetable availability, and meeting planning.
 
 ## Project Structure
 
@@ -45,16 +42,14 @@ StudyMesh is a browser-based student group collaboration prototype for coordinat
 
 ## Main Improvements from the Earlier Version
 
-Compared with the original prototype, this version includes the following changes:
+Compared with the original prototype:
 
-* Refactored the frontend from a single large `index.html` into a modular multi-file structure
-* Added real file upload to Supabase Storage instead of only storing metadata
-* Added private group-based file download using signed URLs
+* Refactored from a single-file prototype into a modular multi-file architecture
+* Introduced real file upload/download via Supabase Storage with group-based access control
 * Added meeting recommendation based on timetable overlap
-* Added realtime synchronization across browser clients for core group data
-* Improved alert persistence and acknowledgement synchronization
-* Added task permission checks
-* Improved consistency of dashboard, timetable, task, and alert updates
+* Implemented realtime synchronization across core collaboration data (tasks, alerts, chat, resources, availability)
+* Added task permission checks to restrict editing and completion
+* Improved consistency and synchronization between dashboard, timetable, tasks, and alerts
 
 ## Main Features
 
@@ -67,8 +62,6 @@ Compared with the original prototype, this version includes the following change
 * weekly availability selection
 * meeting recommendation
 * realtime browser sync
-
-## Key Problems Encountered and Solutions
 
 ### 1. Single-file structure was difficult to maintain
 
@@ -126,6 +119,31 @@ Task edit, delete, and complete actions were previously too permissive.
 **Solution:**
 Permission checks were added so only the correct users can perform task actions. This reduces accidental modification of shared work.
 
+## Update Log
+
+### 2026-04-14 — Startup & Loading Optimization
+
+**Objective:**  
+Improve initial load performance and reduce perceived latency during application startup.
+
+**Key Changes:**
+
+* Unified startup flow with a single hydration owner (`hydrateCurrentGroupData`)
+* Removed duplicate data loading between auth flow and app initialization
+* Parallelized independent data fetching after loading members
+* Deferred non-critical rendering (e.g., timetable) to reduce initial load cost
+* Added member lookup caches to eliminate repeated `find` / `findIndex` operations
+* Reduced redundant renders by consolidating initial UI updates
+* Introduced realtime-safe startup boundary to avoid race conditions during hydration
+* Optimized contribution calculations to reduce repeated computation
+
+**Result:**
+
+* Faster time-to-first-render (UI appears immediately)
+* Reduced redundant network requests
+* More stable realtime behavior during startup
+* Improved scalability as dataset size increases
+
 ## Running the Project
 
 The project should be run through a local HTTP server rather than opened directly with `file://`.
@@ -148,12 +166,3 @@ This project expects a Supabase backend with:
 * a private storage bucket for group files
 * group-based storage access policies
 
-## Summary
-
-StudyMesh has been improved from a basic single-file prototype into a more maintainable collaboration system with:
-
-* modular frontend structure
-* real storage-backed resources
-* smarter timetable support
-* browser-to-browser synchronization
-* more consistent permission and UI behavior
