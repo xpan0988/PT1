@@ -636,6 +636,14 @@
       transition: border-color 0.2s ease;
     }
 
+    select {
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      line-height: 1.2;
+      background-image: none;
+    }
+
     select:focus,
     input[type="text"]:focus,
     input[type="date"]:focus,

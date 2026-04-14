@@ -4,7 +4,14 @@ const SUPABASE_URL = "https://hggtasggdhdgiyhatgfu.supabase.co";
 
     const supabaseClient = window.supabase.createClient(
       SUPABASE_URL,
-      SUPABASE_ANON_KEY
+      SUPABASE_ANON_KEY,
+      {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
+      }
     );
 
     const FILE_LIBRARY = [
