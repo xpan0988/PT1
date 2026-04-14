@@ -66,13 +66,13 @@
 
       state.isHydratingInitialData = true;
       try {
+        // Subscribe before hydration so updates committed during startup are queued
+        // instead of being missed between snapshot queries and channel attach.
+        await runStartupPhase('subscription setup', ensureGroupRealtimeSubscription);
         await runStartupPhase('group hydration', hydrateCurrentGroupData);
         updateHeaderGroupTag();
         seedInitialData();
         await runStartupPhase('initial render block', async () => renderInitialVisibleSurfaces());
-
-        // Subscribe once after initial hydration to avoid overlap with startup loads.
-        await runStartupPhase('subscription setup', ensureGroupRealtimeSubscription);
       } finally {
         state.isHydratingInitialData = false;
       }
