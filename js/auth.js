@@ -65,18 +65,12 @@
         state.currentGroup = data.groups;
         updateHeaderGroupTag();
         document.getElementById('groupModal').classList.remove('open');
-        await loadMembers();
-        await loadTasks();
-        await loadAlerts();
-        await loadMessages();
-        await loadResources();
-        await loadAvailabilityBlocks();
-        await ensureGroupRealtimeSubscription();
-        return;
+        return true;
       }
 
       await unsubscribeRealtime();
       openGroupModal();
+      return false;
     }
 
 
@@ -215,12 +209,7 @@
       state.currentMembership = membership;
       updateHeaderGroupTag();
       document.getElementById('groupModal').classList.remove('open');
-      await loadMembers();
-      await loadTasks();
-      await loadAlerts();
-      await loadMessages();
-      await loadResources();
-      await loadAvailabilityBlocks();
+      await hydrateCurrentGroupData();
       await ensureGroupRealtimeSubscription();
       renderAvatars();
       populateMemberSelects();
@@ -311,12 +300,7 @@
       state.currentMembership = membership;
       updateHeaderGroupTag();
       document.getElementById('groupModal').classList.remove('open');
-      await loadMembers();
-      await loadTasks();
-      await loadAlerts();
-      await loadMessages();
-      await loadResources();
-      await loadAvailabilityBlocks();
+      await hydrateCurrentGroupData();
       await ensureGroupRealtimeSubscription();
       renderAvatars();
       populateMemberSelects();
@@ -339,6 +323,11 @@
       state.availabilityBlocks = [];
       state.contributions = [];
       state.editingTaskId = null;
+      state.memberIndexByDbId = new Map();
+      state.memberByDbId = new Map();
+      state.pendingRealtimeTables = new Set();
+      state.hasRenderedSchedule = false;
+      state.isHydratingInitialData = false;
 
       updateHeaderGroupTag();
       renderAvatars();

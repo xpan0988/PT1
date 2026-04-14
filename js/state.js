@@ -17,4 +17,9 @@ const state = {
       contributions: [],
       realtimeChannels: [],
       realtimeGroupId: null,
+      memberIndexByDbId: new Map(),
+      memberByDbId: new Map(),
+      isHydratingInitialData: false,
+      pendingRealtimeTables: new Set(),
+      hasRenderedSchedule: false,
     };

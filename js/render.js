@@ -56,20 +56,26 @@
 
 
     function recalculateContributions() {
-      state.contributions = state.members.map(member => {
-        const tasksCompleted = state.tasks.filter(task =>
-          task.completed && state.members[task.assigneeId]?.dbId === member.dbId
-        ).length;
+      const taskCountsByDbId = new Map();
+      const fileCountsByDbId = new Map();
 
-        const filesUploaded = state.resources.filter(resource =>
-          state.members[resource.senderId]?.dbId === member.dbId
-        ).length;
-
-        return {
-          tasksCompleted,
-          filesUploaded
-        };
+      state.tasks.forEach(task => {
+        if (!task.completed) return;
+        const assigneeDbId = state.members[task.assigneeId]?.dbId;
+        if (!assigneeDbId) return;
+        taskCountsByDbId.set(assigneeDbId, (taskCountsByDbId.get(assigneeDbId) || 0) + 1);
       });
+
+      state.resources.forEach(resource => {
+        const senderDbId = state.members[resource.senderId]?.dbId;
+        if (!senderDbId) return;
+        fileCountsByDbId.set(senderDbId, (fileCountsByDbId.get(senderDbId) || 0) + 1);
+      });
+
+      state.contributions = state.members.map(member => ({
+        tasksCompleted: taskCountsByDbId.get(member.dbId) || 0,
+        filesUploaded: fileCountsByDbId.get(member.dbId) || 0
+      }));
     }
 
 
@@ -247,7 +253,7 @@
 
           const sectionMembers = state.availabilityBlocks
             .filter(block => block.weekday === day.weekday && section.hours.includes(block.start_hour))
-            .map(block => state.members.find(member => member.dbId === block.user_id))
+            .map(block => state.memberByDbId.get(block.user_id))
             .filter(Boolean);
 
           const uniqueMembers = Array.from(new Map(sectionMembers.map(member => [member.dbId, member])).values());
@@ -260,7 +266,7 @@
             );
 
             const visibleMembers = matchingBlocks
-              .map(block => state.members.find(member => member.dbId === block.user_id))
+              .map(block => state.memberByDbId.get(block.user_id))
               .filter(Boolean);
 
             const selectedByMe = isMyAvailabilityBlockSelected(day.weekday, startHour);
