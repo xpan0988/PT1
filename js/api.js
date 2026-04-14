@@ -36,6 +36,8 @@
         initials: (row.profiles?.display_name || 'U').slice(0, 2).toUpperCase(),
         color: ['#7c6af7','#f7c56a','#6af7b8','#f76a9f'][i % 4]
       }));
+      state.memberIndexByDbId = new Map(state.members.map(member => [member.dbId, member.id]));
+      state.memberByDbId = new Map(state.members.map(member => [member.dbId, member]));
 
       state.contributions = state.members.map(() => ({
         tasksCompleted: 0,
@@ -63,7 +65,7 @@
       }
 
       const dbMessages = (data || []).map(row => {
-        const senderIndex = state.members.findIndex(member => member.dbId === row.sender_user_id);
+        const senderIndex = state.memberIndexByDbId.get(row.sender_user_id) ?? -1;
         return {
           id: row.id,
           type: row.type || 'text',
@@ -114,7 +116,7 @@
       }
 
       state.tasks = (data || []).map(row => {
-        const assigneeIndex = state.members.findIndex(member => member.dbId === row.assignee_user_id);
+        const assigneeIndex = state.memberIndexByDbId.get(row.assignee_user_id) ?? -1;
         return {
           id: row.id,
           title: row.title,
@@ -167,10 +169,10 @@
       });
 
       state.alerts = (data || []).map(row => {
-        const senderIndex = state.members.findIndex(member => member.dbId === row.sender_user_id);
+        const senderIndex = state.memberIndexByDbId.get(row.sender_user_id) ?? -1;
         const acknowledgedDbIds = readsByAlert.get(row.id) || [];
         const acknowledgedBy = acknowledgedDbIds
-          .map(dbId => state.members.findIndex(member => member.dbId === dbId))
+          .map(dbId => state.memberIndexByDbId.get(dbId) ?? -1)
           .filter(index => index !== -1);
 
         return {
@@ -204,7 +206,7 @@
       }
 
       state.resources = (data || []).map(row => {
-        const senderIndex = state.members.findIndex(member => member.dbId === row.sender_user_id);
+        const senderIndex = state.memberIndexByDbId.get(row.sender_user_id) ?? -1;
         return {
           id: row.id,
           senderId: senderIndex,
@@ -354,56 +356,78 @@
       // Always clear stale channels before creating new group-scoped subscriptions.
       await unsubscribeRealtime();
 
+      const runRealtimeHandler = async (tableKey, work) => {
+        if (state.isHydratingInitialData) {
+          state.pendingRealtimeTables.add(tableKey);
+          return;
+        }
+        await work();
+      };
+
       const groupFilter = `group_id=eq.${groupId}`;
       const channel = supabaseClient
         .channel(`group-realtime:${groupId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: groupFilter }, async () => {
-          await loadMessages();
-          renderChatMessages();
+          await runRealtimeHandler('messages', async () => {
+            await loadMessages();
+            renderChatMessages();
+          });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: groupFilter }, async () => {
-          await loadTasks();
-          recalculateContributions();
-          renderTasks();
-          renderCompletedTasks();
-          renderNearestDue();
-          renderProgress();
-          renderSnapshots();
-          updateStatusChips();
+          await runRealtimeHandler('tasks', async () => {
+            await loadTasks();
+            recalculateContributions();
+            renderTasks();
+            renderCompletedTasks();
+            renderNearestDue();
+            renderProgress();
+            renderSnapshots();
+            updateStatusChips();
+          });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'alerts', filter: groupFilter }, async () => {
-          await loadAlerts();
-          await loadMessages();
-          renderAlerts();
-          renderChatMessages();
-          renderSnapshots();
-          updateStatusChips();
+          await runRealtimeHandler('alerts', async () => {
+            await loadAlerts();
+            await loadMessages();
+            renderAlerts();
+            renderChatMessages();
+            renderSnapshots();
+            updateStatusChips();
+          });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_reads' }, async () => {
-          await loadAlerts();
-          await loadMessages();
-          renderAlerts();
-          renderChatMessages();
-          renderSnapshots();
-          updateStatusChips();
+          await runRealtimeHandler('alerts', async () => {
+            await loadAlerts();
+            await loadMessages();
+            renderAlerts();
+            renderChatMessages();
+            renderSnapshots();
+            updateStatusChips();
+          });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'resources', filter: groupFilter }, async () => {
-          await loadResources();
-          recalculateContributions();
-          renderResources();
-          populateResourceTypeFilter();
-          renderProgress();
-          renderSnapshots();
-          updateStatusChips();
+          await runRealtimeHandler('resources', async () => {
+            await loadResources();
+            recalculateContributions();
+            renderResources();
+            populateResourceTypeFilter();
+            renderProgress();
+            renderSnapshots();
+            updateStatusChips();
+          });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_blocks' }, async (payload) => {
           const payloadGroupId = payload?.new?.group_id || payload?.old?.group_id;
           if (payloadGroupId && payloadGroupId !== state.currentGroup?.id) return;
-          await loadAvailabilityBlocks();
-          renderSchedule();
-          syncMeetingRecommendationUI();
-          renderSnapshots();
-          updateStatusChips();
+          await runRealtimeHandler('availability_blocks', async () => {
+            await loadAvailabilityBlocks();
+            if (state.currentView === 'timetable') {
+              renderSchedule();
+            }
+            syncMeetingRecommendationUI();
+            renderSnapshots();
+            updateStatusChips();
+          });
         });
 
       const status = await new Promise(resolve => {
@@ -418,4 +442,45 @@
 
       state.realtimeChannels = [channel];
       state.realtimeGroupId = groupId;
+    }
+
+
+    async function flushPendingRealtimeTables() {
+      if (!state.pendingRealtimeTables || state.pendingRealtimeTables.size === 0) return;
+      const pending = Array.from(state.pendingRealtimeTables);
+      state.pendingRealtimeTables.clear();
+
+      if (pending.includes('alerts')) {
+        await loadAlerts();
+        await loadMessages();
+        renderAlerts();
+        renderChatMessages();
+      } else if (pending.includes('messages')) {
+        await loadMessages();
+        renderChatMessages();
+      }
+
+      if (pending.includes('tasks')) {
+        await loadTasks();
+      }
+      if (pending.includes('resources')) {
+        await loadResources();
+      }
+      if (pending.includes('availability_blocks')) {
+        await loadAvailabilityBlocks();
+        if (state.currentView === 'timetable') {
+          renderSchedule();
+        }
+      }
+
+      recalculateContributions();
+      renderTasks();
+      renderCompletedTasks();
+      renderResources();
+      populateResourceTypeFilter();
+      renderNearestDue();
+      renderProgress();
+      renderSnapshots();
+      updateStatusChips();
+      syncMeetingRecommendationUI();
     }

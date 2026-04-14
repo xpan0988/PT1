@@ -11,35 +11,74 @@
     // =========================
     // App bootstrap
     // =========================
+    async function runStartupPhase(label, work) {
+      const timerLabel = `[startup] ${label}`;
+      console.time(timerLabel);
+      try {
+        return await work();
+      } finally {
+        console.timeEnd(timerLabel);
+      }
+    }
+
+    async function hydrateCurrentGroupData() {
+      if (!state.currentGroup) return;
+
+      // Member data is a dependency for mapping user ids in the datasets below.
+      await runStartupPhase('loadMembers', loadMembers);
+
+      // These loaders are independent once members are ready.
+      await Promise.all([
+        runStartupPhase('loadTasks', loadTasks),
+        runStartupPhase('loadAlerts', loadAlerts),
+        runStartupPhase('loadResources', loadResources),
+        runStartupPhase('loadAvailabilityBlocks', loadAvailabilityBlocks),
+      ]);
+
+      // Messages include synthetic alert messages, so load after alerts complete.
+      await runStartupPhase('loadMessages', loadMessages);
+    }
+
+    function renderInitialVisibleSurfaces() {
+      renderAvatars();
+      populateMemberSelects();
+      refreshAll();
+    }
+
     async function init() {
       // Note: run StudyMesh from a local HTTP server (for example http://localhost),
       // not from file://, so browser auth/storage APIs can work correctly.
-      await initAuth();
-      await ensureProfile();
-      await ensureMembershipOrShowOnboarding();
-      // Subscribe after membership/group is known; helper guards against duplicates.
-      await ensureGroupRealtimeSubscription();
-      await loadTasks();
-      await loadAlerts();
-      await loadMessages();
-      await loadResources();
-      await loadAvailabilityBlocks();
-      updateHeaderGroupTag();
-
-      renderAvatars();
-      populateMemberSelects();
-      populateResourceTypeFilter();
-
-      seedInitialData();
-      renderSchedule();
-      refreshAll();
-
       document.addEventListener('click', function (e) {
         const plusWrap = document.querySelector('.plus-menu-wrap');
         if (plusWrap && !plusWrap.contains(e.target)) {
           document.getElementById('plusMenu').classList.remove('open');
         }
       });
+
+      console.time('[startup] total');
+      await runStartupPhase('initAuth', initAuth);
+      await runStartupPhase('ensureProfile', ensureProfile);
+      const hasMembership = await runStartupPhase('membership resolution', ensureMembershipOrShowOnboarding);
+      if (!hasMembership) {
+        console.timeEnd('[startup] total');
+        return;
+      }
+
+      state.isHydratingInitialData = true;
+      try {
+        // Subscribe before hydration so updates committed during startup are queued
+        // instead of being missed between snapshot queries and channel attach.
+        await runStartupPhase('subscription setup', ensureGroupRealtimeSubscription);
+        await runStartupPhase('group hydration', hydrateCurrentGroupData);
+        updateHeaderGroupTag();
+        seedInitialData();
+        await runStartupPhase('initial render block', async () => renderInitialVisibleSurfaces());
+      } finally {
+        state.isHydratingInitialData = false;
+      }
+
+      await flushPendingRealtimeTables();
+      console.timeEnd('[startup] total');
     }
 
 
@@ -99,6 +138,10 @@
       });
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       document.getElementById('view-' + view).classList.add('active');
+      if (view === 'timetable') {
+        renderSchedule();
+        state.hasRenderedSchedule = true;
+      }
     }
 
     // =========================
@@ -148,7 +191,7 @@
     }
 
     function getCurrentMemberIndex() {
-      return state.members.findIndex(member => member.dbId === state.currentUser?.id);
+      return state.memberIndexByDbId.get(state.currentUser?.id) ?? -1;
     }
 
     function addTaskSeed(title, assigneeId, priority, dueDate, completed) {
