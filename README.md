@@ -123,10 +123,9 @@ Permission checks were added so only the correct users can perform task actions.
 
 ### 2026-04-14 — Startup & Loading Optimization
 
-**Objective:**  
 Improve initial load performance and reduce perceived latency during application startup.
 
-**Key Changes:**
+**Changes:**
 
 * Unified startup flow with a single hydration owner (`hydrateCurrentGroupData`)
 * Removed duplicate data loading between auth flow and app initialization
@@ -137,24 +136,27 @@ Improve initial load performance and reduce perceived latency during application
 * Introduced realtime-safe startup boundary to avoid race conditions during hydration
 * Optimized contribution calculations to reduce repeated computation
 
-**Result:**
+### 2026-04-15 — Startup & Auth Recovery Optimization
+Improve startup performance + authentication/session recovery + join flow correctness
 
-* Faster time-to-first-render (UI appears immediately)
-* Reduced redundant network requests
-* More stable realtime behavior during startup
-* Improved scalability as dataset size increases
+**Changes:**
+- Enforced correct identity recovery order:  
+  `restore session → restore membership → fallback naming (last resort)`
+- Added `waitForInitialAuthSnapshot()` to avoid premature anonymous session creation
+- Hardened `initAuth()` with defensive `getUser()` / `getSession()` retry logic
+- Reordered `joinGroupFlow()` to check existing membership before running duplicate-name logic
+- Restricted fallback display-name generation (`Name (2)`) to true new-user collisions only
+- Preserved device-cache membership recovery (`tryRestoreMembershipFromDeviceCache`)
+- Prevented same-device refresh/re-entry from incorrectly renaming users or forcing rejoin
+- Removed duplicated initial data loading between auth flow and app bootstrap
+- Centralized initial hydration into a single controlled flow
+- Parallelized independent data fetches after member load
+- Reduced unnecessary full-surface renders during first paint
+- Added lightweight member lookup caches to avoid repeated `find/findIndex`
+- Introduced hydration guard to prevent realtime events from interfering during initial load
 
-## Running the Project
 
-The project should be run through a local HTTP server rather than opened directly with `file://`.
 
-Example:
-
-`python3 -m http.server 8000`
-
-Then open:
-
-`http://localhost:8000`
 
 ## Backend Requirements
 
