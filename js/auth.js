@@ -12,10 +12,12 @@
 
     function persistSessionRecovery({ group, password, displayName }) {
       if (!group?.id || !group?.name) return;
+      const existing = readSessionRecovery();
+      const hasPassword = password !== undefined && password !== null && String(password).length > 0;
       const payload = {
         groupId: group.id,
         groupName: group.name,
-        password: String(password || ''),
+        password: hasPassword ? String(password) : String(existing?.password || ''),
         displayName: String(displayName || ''),
         savedAt: new Date().toISOString()
       };
