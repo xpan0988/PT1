@@ -48,8 +48,47 @@
       return `${cleanedBase}-${Date.now().toString().slice(-4)}`;
     }
 
+    async function waitForInitialAuthSnapshot(timeoutMs = 700) {
+      return await new Promise((resolve) => {
+        let settled = false;
+        let timer = null;
+        const settle = (session) => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          subscription?.unsubscribe?.();
+          resolve(session || null);
+        };
+
+        const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, session) => {
+          if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+            settle(session);
+          }
+        });
+
+        timer = setTimeout(() => settle(null), timeoutMs);
+      });
+    }
+
     async function initAuth() {
+      // Priority order: recover any persisted session before creating a new anonymous user.
       let { data: { session } } = await supabaseClient.auth.getSession();
+
+      if (!session) {
+        const initialSnapshot = await waitForInitialAuthSnapshot();
+        if (initialSnapshot) {
+          session = initialSnapshot;
+        }
+      }
+
+      if (!session) {
+        // Defensive retry for cases where token refresh is still settling.
+        const { data: userData } = await supabaseClient.auth.getUser();
+        if (userData?.user) {
+          const { data: { session: refreshedSession } } = await supabaseClient.auth.getSession();
+          session = refreshedSession || null;
+        }
+      }
 
       if (!session) {
         const { data } = await supabaseClient.auth.signInAnonymously();
@@ -368,48 +407,6 @@
         return;
       }
 
-      const { data: existingMembers, error: memberLookupError } = await supabaseClient
-        .from('group_members')
-        .select(`
-          user_id,
-          profiles:user_id (
-            display_name
-          )
-        `)
-        .eq('group_id', targetGroup.id);
-
-      if (memberLookupError) {
-        console.error('group member lookup failed', memberLookupError);
-        showGroupModalError('Failed to check existing group members.');
-        return;
-      }
-
-      const normalizedDisplayName = (state.currentProfile?.display_name || '').trim().toLowerCase();
-      const duplicateMember = (existingMembers || []).find(row =>
-        row.user_id !== state.currentUser.id &&
-        (row.profiles?.display_name || '').trim().toLowerCase() === normalizedDisplayName
-      );
-
-      if (duplicateMember) {
-        const fallbackDisplayName = buildUniqueDisplayName(state.currentProfile?.display_name, existingMembers || []);
-        const { data: updatedProfile, error: profileError } = await supabaseClient
-          .from('profiles')
-          .update({ display_name: fallbackDisplayName })
-          .eq('id', state.currentUser.id)
-          .select()
-          .single();
-
-        if (profileError || !updatedProfile) {
-          console.error('display name conflict update failed', profileError);
-          showGroupModalError('This name is already in use and we could not generate a fallback name.');
-          return;
-        }
-
-        state.currentProfile = updatedProfile;
-        document.getElementById('groupUserName').value = fallbackDisplayName;
-        showToast(`Name already used. You were renamed to "${fallbackDisplayName}".`, 'alert');
-      }
-
       const { data: existingMembership } = await supabaseClient
         .from('group_members')
         .select('*')
@@ -420,6 +417,50 @@
       let membership = existingMembership;
 
       if (!membership) {
+        // Fallback naming is a true join-only behavior: apply it only when creating
+        // a brand-new membership for this user in the target group.
+        const { data: existingMembers, error: memberLookupError } = await supabaseClient
+          .from('group_members')
+          .select(`
+            user_id,
+            profiles:user_id (
+              display_name
+            )
+          `)
+          .eq('group_id', targetGroup.id);
+
+        if (memberLookupError) {
+          console.error('group member lookup failed', memberLookupError);
+          showGroupModalError('Failed to check existing group members.');
+          return;
+        }
+
+        const normalizedDisplayName = (state.currentProfile?.display_name || '').trim().toLowerCase();
+        const duplicateMember = (existingMembers || []).find(row =>
+          row.user_id !== state.currentUser.id &&
+          (row.profiles?.display_name || '').trim().toLowerCase() === normalizedDisplayName
+        );
+
+        if (duplicateMember) {
+          const fallbackDisplayName = buildUniqueDisplayName(state.currentProfile?.display_name, existingMembers || []);
+          const { data: updatedProfile, error: profileError } = await supabaseClient
+            .from('profiles')
+            .update({ display_name: fallbackDisplayName })
+            .eq('id', state.currentUser.id)
+            .select()
+            .single();
+
+          if (profileError || !updatedProfile) {
+            console.error('display name conflict update failed', profileError);
+            showGroupModalError('This name is already in use and we could not generate a fallback name.');
+            return;
+          }
+
+          state.currentProfile = updatedProfile;
+          document.getElementById('groupUserName').value = fallbackDisplayName;
+          showToast(`Name already used. You were renamed to "${fallbackDisplayName}".`, 'alert');
+        }
+
         const { data: createdMembership, error: membershipError } = await supabaseClient
           .from('group_members')
           .insert({
