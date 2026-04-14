@@ -42,6 +42,8 @@
     function renderInitialVisibleSurfaces() {
       renderAvatars();
       populateMemberSelects();
+      initializeTaskDueDateSelectors();
+      resetTaskForm();
       refreshAll();
     }
 

@@ -1,14 +1,67 @@
 // Task actions
 
+    function getDueDateFromSelectors() {
+      const year = document.getElementById('taskDueYear')?.value;
+      const month = document.getElementById('taskDueMonth')?.value;
+      const day = document.getElementById('taskDueDay')?.value;
+      if (!year || !month || !day) return '';
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+
+    function setDueDateSelectors(dateStr) {
+      const yearSelect = document.getElementById('taskDueYear');
+      const monthSelect = document.getElementById('taskDueMonth');
+      const daySelect = document.getElementById('taskDueDay');
+      if (!yearSelect || !monthSelect || !daySelect) return;
+
+      if (!isValidDueDateInput(dateStr)) {
+        yearSelect.value = '';
+        monthSelect.value = '';
+        daySelect.value = '';
+        return;
+      }
+
+      const [year, month, day] = dateStr.split('-');
+      yearSelect.value = year;
+      monthSelect.value = String(Number(month));
+      daySelect.value = String(Number(day));
+    }
+
+    function initializeTaskDueDateSelectors() {
+      const yearSelect = document.getElementById('taskDueYear');
+      const monthSelect = document.getElementById('taskDueMonth');
+      const daySelect = document.getElementById('taskDueDay');
+      if (!yearSelect || !monthSelect || !daySelect) return;
+
+      const currentYear = new Date().getFullYear();
+      const years = [];
+      for (let year = currentYear - 5; year <= currentYear + 5; year += 1) {
+        years.push(`<option value="${year}">${year}</option>`);
+      }
+      yearSelect.innerHTML = `<option value="">Year</option>${years.join('')}`;
+
+      const months = [];
+      for (let month = 1; month <= 12; month += 1) {
+        months.push(`<option value="${month}">${month}</option>`);
+      }
+      monthSelect.innerHTML = `<option value="">Month</option>${months.join('')}`;
+
+      const days = [];
+      for (let day = 1; day <= 31; day += 1) {
+        days.push(`<option value="${day}">${day}</option>`);
+      }
+      daySelect.innerHTML = `<option value="">Day</option>${days.join('')}`;
+    }
+
     async function addTask() {
       const title = document.getElementById('taskInput').value.trim();
       const assigneeId = parseInt(document.getElementById('taskAssignee').value, 10);
-      const dueDate = document.getElementById('taskDueDate').value;
+      const dueDate = getDueDateFromSelectors();
       const priority = document.getElementById('taskPriority').value;
 
       if (!title || !dueDate || !state.currentGroup) return;
       if (!isValidDueDateInput(dueDate)) {
-        showToast('Please use a valid due date (YYYY-MM-DD)', 'alert');
+        showToast('Please select a valid due date', 'alert');
         return;
       }
       const normalizedDueDate = toIsoDateInput(parseDateInputToDate(dueDate));
@@ -113,7 +166,7 @@
 
       document.getElementById('taskInput').value = task.title;
       document.getElementById('taskAssignee').value = String(task.assigneeId);
-      document.getElementById('taskDueDate').value = isValidDueDateInput(task.dueDate) ? task.dueDate : '';
+      setDueDateSelectors(task.dueDate);
       document.getElementById('taskPriority').value = task.priority || 'Medium';
       state.editingTaskId = taskId;
 
@@ -127,7 +180,7 @@
 
     function resetTaskForm() {
       document.getElementById('taskInput').value = '';
-      document.getElementById('taskDueDate').value = '';
+      setDueDateSelectors('');
       document.getElementById('taskPriority').value = 'Medium';
       document.getElementById('taskAssignee').selectedIndex = 0;
       state.editingTaskId = null;
