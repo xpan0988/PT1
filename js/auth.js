@@ -1,4 +1,45 @@
 // Authentication, profile, and group membership flows
+    const SESSION_RECOVERY_KEY = 'studymesh.sessionRecovery';
+
+    function readSessionRecovery() {
+      try {
+        return JSON.parse(localStorage.getItem(SESSION_RECOVERY_KEY) || 'null');
+      } catch (error) {
+        console.warn('Failed to parse session recovery data', error);
+        return null;
+      }
+    }
+
+    function persistSessionRecovery({ group, password, displayName }) {
+      if (!group?.id || !group?.name) return;
+      const payload = {
+        groupId: group.id,
+        groupName: group.name,
+        password: String(password || ''),
+        displayName: String(displayName || ''),
+        savedAt: new Date().toISOString()
+      };
+      localStorage.setItem(SESSION_RECOVERY_KEY, JSON.stringify(payload));
+    }
+
+    function buildUniqueDisplayName(baseName, existingMembers) {
+      const cleanedBase = String(baseName || '').trim() || 'User';
+      const existingNames = new Set((existingMembers || [])
+        .map(row => (row.profiles?.display_name || '').trim().toLowerCase())
+        .filter(Boolean));
+      if (!existingNames.has(cleanedBase.toLowerCase())) {
+        return cleanedBase;
+      }
+
+      for (let i = 2; i <= 99; i += 1) {
+        const candidate = `${cleanedBase} (${i})`;
+        if (!existingNames.has(candidate.toLowerCase())) {
+          return candidate;
+        }
+      }
+
+      return `${cleanedBase}-${Date.now().toString().slice(-4)}`;
+    }
 
     async function initAuth() {
       let { data: { session } } = await supabaseClient.auth.getSession();
@@ -38,6 +79,70 @@
       state.currentProfile = data;
     }
 
+    async function tryRestoreMembershipFromDeviceCache() {
+      const cached = readSessionRecovery();
+      if (!cached?.groupId || !cached?.password) return false;
+
+      const { data: targetGroup, error: groupError } = await supabaseClient
+        .from('groups')
+        .select('*')
+        .eq('id', cached.groupId)
+        .maybeSingle();
+
+      if (groupError || !targetGroup || targetGroup.password_hash !== cached.password) {
+        return false;
+      }
+
+      const desiredName = String(cached.displayName || state.currentProfile?.display_name || '').trim();
+      if (desiredName && desiredName !== state.currentProfile?.display_name) {
+        const { data: updatedProfile, error: profileError } = await supabaseClient
+          .from('profiles')
+          .update({ display_name: desiredName })
+          .eq('id', state.currentUser.id)
+          .select()
+          .single();
+        if (!profileError && updatedProfile) {
+          state.currentProfile = updatedProfile;
+        }
+      }
+
+      const { data: existingMembership } = await supabaseClient
+        .from('group_members')
+        .select('*')
+        .eq('group_id', targetGroup.id)
+        .eq('user_id', state.currentUser.id)
+        .maybeSingle();
+
+      let membership = existingMembership;
+      if (!membership) {
+        const { data: createdMembership, error: membershipError } = await supabaseClient
+          .from('group_members')
+          .insert({
+            group_id: targetGroup.id,
+            user_id: state.currentUser.id
+          })
+          .select()
+          .single();
+
+        if (membershipError || !createdMembership) {
+          return false;
+        }
+
+        membership = createdMembership;
+      }
+
+      state.currentMembership = membership;
+      state.currentGroup = targetGroup;
+      updateHeaderGroupTag();
+      document.getElementById('groupModal').classList.remove('open');
+      persistSessionRecovery({
+        group: targetGroup,
+        password: cached.password,
+        displayName: state.currentProfile?.display_name || desiredName
+      });
+      return true;
+    }
+
     async function ensureMembershipOrShowOnboarding() {
       const { data, error } = await supabaseClient
         .from('group_members')
@@ -63,8 +168,17 @@
       if (data && data.groups) {
         state.currentMembership = data;
         state.currentGroup = data.groups;
+        persistSessionRecovery({
+          group: data.groups,
+          displayName: state.currentProfile?.display_name || ''
+        });
         updateHeaderGroupTag();
         document.getElementById('groupModal').classList.remove('open');
+        return true;
+      }
+
+      const restoredFromCache = await tryRestoreMembershipFromDeviceCache();
+      if (restoredFromCache) {
         return true;
       }
 
@@ -78,8 +192,9 @@
       setGroupMode('create');
       clearGroupModalError();
       document.getElementById('groupUserName').value = state.currentProfile?.display_name || '';
-      document.getElementById('groupNameInput').value = '';
-      document.getElementById('groupPasswordInput').value = '';
+      const cached = readSessionRecovery();
+      document.getElementById('groupNameInput').value = cached?.groupName || '';
+      document.getElementById('groupPasswordInput').value = cached?.password || '';
       document.getElementById('groupModal').classList.add('open');
       document.getElementById('groupUserName').focus();
     }
@@ -207,6 +322,11 @@
 
       state.currentGroup = createdGroup;
       state.currentMembership = membership;
+      persistSessionRecovery({
+        group: createdGroup,
+        password,
+        displayName: state.currentProfile?.display_name || ''
+      });
       updateHeaderGroupTag();
       document.getElementById('groupModal').classList.remove('open');
       await hydrateCurrentGroupData();
@@ -264,8 +384,23 @@
       );
 
       if (duplicateMember) {
-        showGroupModalError('This name is already being used in the group. Please choose a different display name before joining.');
-        return;
+        const fallbackDisplayName = buildUniqueDisplayName(state.currentProfile?.display_name, existingMembers || []);
+        const { data: updatedProfile, error: profileError } = await supabaseClient
+          .from('profiles')
+          .update({ display_name: fallbackDisplayName })
+          .eq('id', state.currentUser.id)
+          .select()
+          .single();
+
+        if (profileError || !updatedProfile) {
+          console.error('display name conflict update failed', profileError);
+          showGroupModalError('This name is already in use and we could not generate a fallback name.');
+          return;
+        }
+
+        state.currentProfile = updatedProfile;
+        document.getElementById('groupUserName').value = fallbackDisplayName;
+        showToast(`Name already used. You were renamed to "${fallbackDisplayName}".`, 'alert');
       }
 
       const { data: existingMembership } = await supabaseClient
@@ -298,6 +433,11 @@
 
       state.currentGroup = targetGroup;
       state.currentMembership = membership;
+      persistSessionRecovery({
+        group: targetGroup,
+        password,
+        displayName: state.currentProfile?.display_name || ''
+      });
       updateHeaderGroupTag();
       document.getElementById('groupModal').classList.remove('open');
       await hydrateCurrentGroupData();
