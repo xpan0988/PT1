@@ -655,6 +655,12 @@
       gap: 12px;
     }
 
+    .due-date-selectors {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
     .resource-toolbar {
       display: flex;
       justify-content: space-between;
@@ -860,11 +866,19 @@
       color: var(--warning);
     }
 
+    .schedule-grid-scroll {
+      margin-top: 12px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 4px;
+    }
+
     .schedule-grid {
       display: grid;
-      grid-template-columns: repeat(7, minmax(0,1fr));
+      grid-template-columns: repeat(7, minmax(185px, 185px));
       gap: 12px;
-      margin-top: 12px;
+      width: max-content;
+      min-width: 100%;
     }
 
     .day-column {
@@ -873,6 +887,7 @@
       border-radius: 12px;
       padding: 12px;
       min-height: 320px;
+      width: 185px;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -987,6 +1002,7 @@
       font-size: 12px;
       font-weight: 700;
       font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap;
     }
 
     .slot-members {
@@ -1513,6 +1529,6 @@
       }
 
       .schedule-grid {
-        grid-template-columns: 1fr;
+        min-width: max-content;
       }
     }

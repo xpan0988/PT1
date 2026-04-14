@@ -194,7 +194,11 @@
                 </div>
                 <div>
                   <div class="field-label">Due Date</div>
-                  <input type="date" id="taskDueDate">
+                  <div class="due-date-selectors" id="taskDueDateSelectors">
+                    <select id="taskDueYear" aria-label="Due year"></select>
+                    <select id="taskDueMonth" aria-label="Due month"></select>
+                    <select id="taskDueDay" aria-label="Due day"></select>
+                  </div>
                 </div>
               </div>
 
@@ -244,7 +248,9 @@
           </div>
 
           <div class="resource-list" id="meetingRecommendationsWrap"></div>
-          <div class="schedule-grid" id="scheduleGrid"></div>
+          <div class="schedule-grid-scroll">
+            <div class="schedule-grid" id="scheduleGrid"></div>
+          </div>
 
         </div>
       </section>
