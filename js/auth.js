@@ -66,6 +66,7 @@
       state.currentGroup = null;
       state.currentMembership = null;
       state.currentProfile = null;
+      state.hasResolvedMembership = false;
       state.members = [];
       state.tasks = [];
       state.alerts = [];
@@ -86,6 +87,17 @@
       state.groupContentKeys = {};
       state.userKeypairReady = false;
       state.userKeypair = null;
+    }
+
+    function setAuthActionAvailability(isEnabled, statusMessage = '') {
+      const actionButtons = document.querySelectorAll('#authModal .panel-actions button');
+      actionButtons.forEach((button) => {
+        button.disabled = !isEnabled;
+      });
+
+      const statusEl = document.getElementById('authStatusMessage');
+      if (!statusEl) return;
+      statusEl.textContent = statusMessage || '';
     }
 
     function buildUniqueDisplayName(baseName, existingMembers) {
@@ -137,7 +149,10 @@
       document.getElementById('authModal').classList.add('open');
       document.getElementById('appHeader').style.display = 'none';
       document.getElementById('appShell').style.display = 'none';
-      document.getElementById('authEmailInput').focus();
+      setAuthActionAvailability(!state.isAuthBootstrapping && !state.isAuthActionPending, state.isAuthBootstrapping ? 'Restoring previous session…' : '');
+      if (!state.isAuthBootstrapping) {
+        document.getElementById('authEmailInput').focus();
+      }
     }
 
     function hideAuthUI() {
@@ -183,9 +198,6 @@
 
       if (data?.session) {
         applySession(data.session, 'new session created (signup)');
-        if (window.handlePostAuthSuccess) {
-          await window.handlePostAuthSuccess();
-        }
       }
 
       return data;
@@ -200,9 +212,6 @@
 
       if (data?.session) {
         applySession(data.session, 'new session created (signin)');
-        if (window.handlePostAuthSuccess) {
-          await window.handlePostAuthSuccess();
-        }
       }
 
       return data;
@@ -213,9 +222,6 @@
       if (error) throw error;
       if (data?.session) {
         applySession(data.session, 'new session created (guest)');
-        if (window.handlePostAuthSuccess) {
-          await window.handlePostAuthSuccess();
-        }
       }
       return data;
     }
@@ -247,57 +253,111 @@
     }
 
     async function handleEmailSignIn() {
+      if (state.isAuthBootstrapping || state.isAuthActionPending) {
+        return;
+      }
       const email = document.getElementById('authEmailInput').value;
       const password = document.getElementById('authPasswordInput').value;
       const statusEl = document.getElementById('authStatusMessage');
       statusEl.textContent = '';
+      state.isAuthActionPending = true;
+      setAuthActionAvailability(false, 'Signing in…');
       try {
-        await signInWithEmail(email, password);
+        const data = await signInWithEmail(email, password);
+        if (data?.session && window.handlePostAuthSuccess) {
+          try {
+            await window.handlePostAuthSuccess();
+          } catch (postAuthError) {
+            console.error('post-auth initialization failed after email sign in', postAuthError);
+            statusEl.textContent = postAuthError?.message || 'Signed in, but app initialization failed.';
+            showAuthUI();
+          }
+        }
       } catch (error) {
         console.error('email sign in failed', error);
         statusEl.textContent = error.message || 'Sign in failed.';
+      } finally {
+        state.isAuthActionPending = false;
+        setAuthActionAvailability(!state.isAuthBootstrapping, statusEl.textContent);
       }
     }
 
     async function handleEmailSignUp() {
+      if (state.isAuthBootstrapping || state.isAuthActionPending) {
+        return;
+      }
       const email = document.getElementById('authEmailInput').value;
       const password = document.getElementById('authPasswordInput').value;
       const statusEl = document.getElementById('authStatusMessage');
       statusEl.textContent = '';
+      state.isAuthActionPending = true;
+      setAuthActionAvailability(false, 'Creating account…');
       try {
         const data = await signUpWithEmail(email, password);
+        if (data?.session && window.handlePostAuthSuccess) {
+          try {
+            await window.handlePostAuthSuccess();
+          } catch (postAuthError) {
+            console.error('post-auth initialization failed after email sign up', postAuthError);
+            statusEl.textContent = postAuthError?.message || 'Account created, but app initialization failed.';
+            showAuthUI();
+            return;
+          }
+        }
         if (!data?.session && data?.user) {
           statusEl.textContent = 'Signup created. Please sign in.';
         }
       } catch (error) {
         console.error('email sign up failed', error);
         statusEl.textContent = error.message || 'Sign up failed.';
+      } finally {
+        state.isAuthActionPending = false;
+        setAuthActionAvailability(!state.isAuthBootstrapping, statusEl.textContent);
       }
     }
 
     async function handleGuestContinue() {
+      if (state.isAuthBootstrapping || state.isAuthActionPending) {
+        return;
+      }
       const statusEl = document.getElementById('authStatusMessage');
       statusEl.textContent = '';
+      state.isAuthActionPending = true;
+      setAuthActionAvailability(false, 'Continuing as guest…');
       try {
-        await signInAsGuest();
+        const data = await signInAsGuest();
+        if (data?.session && window.handlePostAuthSuccess) {
+          try {
+            await window.handlePostAuthSuccess();
+          } catch (postAuthError) {
+            console.error('post-auth initialization failed after guest sign in', postAuthError);
+            statusEl.textContent = postAuthError?.message || 'Guest sign-in succeeded, but app initialization failed.';
+            showAuthUI();
+          }
+        }
       } catch (error) {
         console.error('guest sign in failed', error);
         statusEl.textContent = error.message || 'Guest sign in failed.';
+      } finally {
+        state.isAuthActionPending = false;
+        setAuthActionAvailability(!state.isAuthBootstrapping, statusEl.textContent);
       }
     }
 
 
     async function ensureProfile() {
       const user = state.currentUser;
+      if (!user?.id) return null;
 
-      const { data } = await supabaseClient
+      const { data, error } = await supabaseClient
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .maybeSingle();
+      if (error) throw error;
 
       if (!data) {
-        const { data: inserted } = await supabaseClient
+        const { data: inserted, error: insertError } = await supabaseClient
           .from('profiles')
           .insert({
             id: user.id,
@@ -306,11 +366,28 @@
           .select()
           .single();
 
+        if (insertError) {
+          const code = String(insertError?.code || '');
+          const details = String(insertError?.details || '');
+          const isConflict = code === '23505' || insertError?.status === 409 || /duplicate/i.test(details);
+          if (!isConflict) throw insertError;
+
+          const { data: conflictedProfile, error: conflictFetchError } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+          if (conflictFetchError) throw conflictFetchError;
+          state.currentProfile = conflictedProfile || { id: user.id, display_name: 'User' };
+          return state.currentProfile;
+        }
+
         state.currentProfile = inserted || { id: user.id, display_name: 'User' };
-        return;
+        return state.currentProfile;
       }
 
       state.currentProfile = data;
+      return state.currentProfile;
     }
 
     async function tryRestoreMembershipFromDeviceCache() {
@@ -417,8 +494,10 @@
     }
 
     async function ensureMembershipOrShowOnboarding() {
+      state.hasResolvedMembership = false;
       const restored = await tryRestoreMembership(state.currentUser?.id);
       if (restored) {
+        state.hasResolvedMembership = true;
         return true;
       }
 
@@ -428,10 +507,12 @@
           userId: state.currentUser?.id,
           groupId: state.currentGroup?.id
         });
+        state.hasResolvedMembership = true;
         return true;
       }
 
       await unsubscribeRealtime();
+      state.hasResolvedMembership = true;
       openGroupModal();
       return false;
     }
@@ -571,6 +652,7 @@
 
       state.currentGroup = createdGroup;
       state.currentMembership = membership;
+      state.hasResolvedMembership = true;
       persistSessionRecovery({
         group: createdGroup,
         password,
@@ -685,6 +767,7 @@
 
       state.currentGroup = targetGroup;
       state.currentMembership = membership;
+      state.hasResolvedMembership = true;
       persistSessionRecovery({
         group: targetGroup,
         password,
@@ -707,6 +790,7 @@
 
       state.currentGroup = null;
       state.currentMembership = null;
+      state.hasResolvedMembership = false;
       state.members = [];
       state.messages = [];
       state.tasks = [];
