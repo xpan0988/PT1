@@ -55,25 +55,71 @@
       refreshAll();
     }
 
+    function buildPostAuthPhaseError(phase, message, cause) {
+      const error = new Error(message);
+      error.postAuthPhase = phase;
+      error.cause = cause;
+      return error;
+    }
+
     async function handlePostAuthSuccess() {
+      state.e2eeInitWarning = '';
       hideAuthUI();
-      await runStartupPhase('ensureProfile', ensureProfile);
-      await runStartupPhase('ensureLocalUserKeypair', () => ensureLocalUserKeypair(state.currentUser?.id));
-      const hasMembership = await runStartupPhase('membership resolution', ensureMembershipOrShowOnboarding);
+      try {
+        await runStartupPhase('ensureProfile', ensureProfile);
+      } catch (error) {
+        console.error('[post-auth:profile] ensureProfile failed', error);
+        throw buildPostAuthPhaseError('profile', 'Signed in, but failed to initialize your profile.', error);
+      }
+
+      try {
+        await runStartupPhase('ensureLocalUserKeypair', () => ensureLocalUserKeypair(state.currentUser?.id));
+      } catch (error) {
+        // Non-fatal: auth/profile may still proceed for onboarding and app access.
+        state.e2eeInitWarning = 'Message encryption setup is not ready yet. Chat encryption may be unavailable until this is resolved.';
+        console.error('[post-auth:e2ee-user-key] ensureLocalUserKeypair failed (continuing)', error);
+      }
+
+      let hasMembership = false;
+      try {
+        hasMembership = await runStartupPhase('membership resolution', ensureMembershipOrShowOnboarding);
+      } catch (error) {
+        console.error('[post-auth:membership] ensureMembershipOrShowOnboarding failed', error);
+        throw buildPostAuthPhaseError('membership', 'Signed in, but failed to load your group membership state.', error);
+      }
       if (!hasMembership) return;
 
       state.isHydratingInitialData = true;
       try {
-        await runStartupPhase('subscription setup', ensureGroupRealtimeSubscription);
-        await runStartupPhase('group hydration', hydrateCurrentGroupData);
+        try {
+          await runStartupPhase('subscription setup', ensureGroupRealtimeSubscription);
+        } catch (error) {
+          console.error('[post-auth:realtime] ensureGroupRealtimeSubscription failed', error);
+          throw buildPostAuthPhaseError('realtime', 'Signed in, but failed to subscribe to group updates.', error);
+        }
+        try {
+          await runStartupPhase('group hydration', hydrateCurrentGroupData);
+        } catch (error) {
+          console.error('[post-auth:hydration] hydrateCurrentGroupData failed', error);
+          throw buildPostAuthPhaseError('hydration', 'Signed in, but failed to load group data.', error);
+        }
         updateHeaderGroupTag();
         seedInitialData();
-        await runStartupPhase('initial render block', async () => renderInitialVisibleSurfaces());
+        try {
+          await runStartupPhase('initial render block', async () => renderInitialVisibleSurfaces());
+        } catch (error) {
+          console.error('[post-auth:render] initial render failed', error);
+          throw buildPostAuthPhaseError('render', 'Signed in, but failed to render the app shell.', error);
+        }
       } finally {
         state.isHydratingInitialData = false;
       }
 
-      await flushPendingRealtimeTables();
+      try {
+        await flushPendingRealtimeTables();
+      } catch (error) {
+        console.error('[post-auth:realtime-flush] flushPendingRealtimeTables failed', error);
+      }
     }
 
     window.handlePostAuthSuccess = handlePostAuthSuccess;
@@ -104,7 +150,10 @@
         try {
           await handlePostAuthSuccess();
         } catch (postAuthError) {
-          console.error('post-auth initialization failed after session restore', postAuthError);
+          console.error('post-auth initialization failed after session restore (auth restored)', {
+            phase: postAuthError?.postAuthPhase || 'unknown',
+            error: postAuthError
+          });
           showAuthUI();
           const statusEl = document.getElementById('authStatusMessage');
           if (statusEl) {

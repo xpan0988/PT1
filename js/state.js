@@ -29,4 +29,5 @@ const state = {
       groupContentKeys: {},
       userKeypairReady: false,
       userKeypair: null,
+      e2eeInitWarning: '',
     };

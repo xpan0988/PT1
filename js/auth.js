@@ -87,6 +87,7 @@
       state.groupContentKeys = {};
       state.userKeypairReady = false;
       state.userKeypair = null;
+      state.e2eeInitWarning = '';
     }
 
     function setAuthActionAvailability(isEnabled, statusMessage = '') {
@@ -143,6 +144,22 @@
 
     function delay(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function getPostAuthFailureMessage(postAuthError, fallback) {
+      const phase = postAuthError?.postAuthPhase || 'unknown';
+      const phaseMessageByCode = {
+        profile: 'Signed in, but profile initialization failed.',
+        membership: 'Signed in, but membership/onboarding initialization failed.',
+        realtime: 'Signed in, but realtime subscription initialization failed.',
+        hydration: 'Signed in, but group data hydration failed.',
+        render: 'Signed in, but rendering failed.'
+      };
+      const base = phaseMessageByCode[phase] || fallback;
+      const details = postAuthError?.message && postAuthError.message !== base
+        ? ` ${postAuthError.message}`
+        : '';
+      return `${base}${details}`;
     }
 
     function showAuthUI() {
@@ -267,9 +284,15 @@
         if (data?.session && window.handlePostAuthSuccess) {
           try {
             await window.handlePostAuthSuccess();
+            if (state.e2eeInitWarning) {
+              statusEl.textContent = state.e2eeInitWarning;
+            }
           } catch (postAuthError) {
-            console.error('post-auth initialization failed after email sign in', postAuthError);
-            statusEl.textContent = postAuthError?.message || 'Signed in, but app initialization failed.';
+            console.error('post-auth initialization failed after email sign in (auth succeeded)', {
+              phase: postAuthError?.postAuthPhase || 'unknown',
+              error: postAuthError
+            });
+            statusEl.textContent = getPostAuthFailureMessage(postAuthError, 'Signed in, but app initialization failed.');
             showAuthUI();
           }
         }
@@ -297,9 +320,15 @@
         if (data?.session && window.handlePostAuthSuccess) {
           try {
             await window.handlePostAuthSuccess();
+            if (state.e2eeInitWarning) {
+              statusEl.textContent = state.e2eeInitWarning;
+            }
           } catch (postAuthError) {
-            console.error('post-auth initialization failed after email sign up', postAuthError);
-            statusEl.textContent = postAuthError?.message || 'Account created, but app initialization failed.';
+            console.error('post-auth initialization failed after email sign up (auth succeeded)', {
+              phase: postAuthError?.postAuthPhase || 'unknown',
+              error: postAuthError
+            });
+            statusEl.textContent = getPostAuthFailureMessage(postAuthError, 'Account created, but app initialization failed.');
             showAuthUI();
             return;
           }
@@ -329,9 +358,15 @@
         if (data?.session && window.handlePostAuthSuccess) {
           try {
             await window.handlePostAuthSuccess();
+            if (state.e2eeInitWarning) {
+              statusEl.textContent = state.e2eeInitWarning;
+            }
           } catch (postAuthError) {
-            console.error('post-auth initialization failed after guest sign in', postAuthError);
-            statusEl.textContent = postAuthError?.message || 'Guest sign-in succeeded, but app initialization failed.';
+            console.error('post-auth initialization failed after guest sign in (auth succeeded)', {
+              phase: postAuthError?.postAuthPhase || 'unknown',
+              error: postAuthError
+            });
+            statusEl.textContent = getPostAuthFailureMessage(postAuthError, 'Guest sign-in succeeded, but app initialization failed.');
             showAuthUI();
           }
         }
