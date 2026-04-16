@@ -70,32 +70,147 @@
       });
     }
 
-    async function initAuth() {
-      // Priority order: recover any persisted session before creating a new anonymous user.
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function showAuthUI() {
+      document.getElementById('authModal').classList.add('open');
+      document.getElementById('appHeader').style.display = 'none';
+      document.getElementById('appShell').style.display = 'none';
+      document.getElementById('authEmailInput').focus();
+    }
+
+    function hideAuthUI() {
+      document.getElementById('authModal').classList.remove('open');
+      document.getElementById('appHeader').style.display = '';
+      document.getElementById('appShell').style.display = '';
+    }
+
+    function applySession(session, sourceLabel = 'session') {
+      state.currentUser = session?.user || null;
+      console.log(`[auth] ${sourceLabel}`, state.currentUser?.id || 'none');
+    }
+
+    async function restoreSession() {
       let { data: { session } } = await supabaseClient.auth.getSession();
 
       if (!session) {
-        const initialSnapshot = await waitForInitialAuthSnapshot();
-        if (initialSnapshot) {
-          session = initialSnapshot;
-        }
+        await delay(180);
+        const retry = await supabaseClient.auth.getSession();
+        session = retry?.data?.session || null;
       }
 
       if (!session) {
-        // Defensive retry for cases where token refresh is still settling.
-        const { data: userData } = await supabaseClient.auth.getUser();
-        if (userData?.user) {
-          const { data: { session: refreshedSession } } = await supabaseClient.auth.getSession();
-          session = refreshedSession || null;
+        const snapshot = await waitForInitialAuthSnapshot();
+        session = snapshot || null;
+      }
+
+      if (session) {
+        applySession(session, 'session restored');
+        return session;
+      }
+
+      console.log('[auth] no restorable session found');
+      return null;
+    }
+
+    async function signUpWithEmail(email, password) {
+      const { data, error } = await supabaseClient.auth.signUp({
+        email: String(email || '').trim(),
+        password: String(password || '')
+      });
+      if (error) throw error;
+
+      if (data?.session) {
+        applySession(data.session, 'new session created (signup)');
+        if (window.handlePostAuthSuccess) {
+          await window.handlePostAuthSuccess();
         }
       }
 
-      if (!session) {
-        const { data } = await supabaseClient.auth.signInAnonymously();
-        session = data.session;
+      return data;
+    }
+
+    async function signInWithEmail(email, password) {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
+        email: String(email || '').trim(),
+        password: String(password || '')
+      });
+      if (error) throw error;
+
+      if (data?.session) {
+        applySession(data.session, 'new session created (signin)');
+        if (window.handlePostAuthSuccess) {
+          await window.handlePostAuthSuccess();
+        }
       }
 
-      state.currentUser = session.user;
+      return data;
+    }
+
+    async function signInAsGuest() {
+      const { data, error } = await supabaseClient.auth.signInAnonymously();
+      if (error) throw error;
+      if (data?.session) {
+        applySession(data.session, 'new session created (guest)');
+        if (window.handlePostAuthSuccess) {
+          await window.handlePostAuthSuccess();
+        }
+      }
+      return data;
+    }
+
+    async function signOut() {
+      const { error } = await supabaseClient.auth.signOut();
+      if (error) throw error;
+      state.currentUser = null;
+      state.currentProfile = null;
+      state.currentGroup = null;
+      state.currentMembership = null;
+      await unsubscribeRealtime();
+      document.getElementById('groupModal').classList.remove('open');
+      showAuthUI();
+    }
+
+    async function handleEmailSignIn() {
+      const email = document.getElementById('authEmailInput').value;
+      const password = document.getElementById('authPasswordInput').value;
+      const statusEl = document.getElementById('authStatusMessage');
+      statusEl.textContent = '';
+      try {
+        await signInWithEmail(email, password);
+      } catch (error) {
+        console.error('email sign in failed', error);
+        statusEl.textContent = error.message || 'Sign in failed.';
+      }
+    }
+
+    async function handleEmailSignUp() {
+      const email = document.getElementById('authEmailInput').value;
+      const password = document.getElementById('authPasswordInput').value;
+      const statusEl = document.getElementById('authStatusMessage');
+      statusEl.textContent = '';
+      try {
+        const data = await signUpWithEmail(email, password);
+        if (!data?.session && data?.user) {
+          statusEl.textContent = 'Signup created. Please sign in.';
+        }
+      } catch (error) {
+        console.error('email sign up failed', error);
+        statusEl.textContent = error.message || 'Sign up failed.';
+      }
+    }
+
+    async function handleGuestContinue() {
+      const statusEl = document.getElementById('authStatusMessage');
+      statusEl.textContent = '';
+      try {
+        await signInAsGuest();
+      } catch (error) {
+        console.error('guest sign in failed', error);
+        statusEl.textContent = error.message || 'Guest sign in failed.';
+      }
     }
 
 
@@ -189,7 +304,8 @@
       return true;
     }
 
-    async function ensureMembershipOrShowOnboarding() {
+    async function tryRestoreMembership(userId = state.currentUser?.id) {
+      if (!userId) return false;
       const { data, error } = await supabaseClient
         .from('group_members')
         .select(`
@@ -204,16 +320,17 @@
             created_at
           )
         `)
-        .eq('user_id', state.currentUser.id)
+        .eq('user_id', userId)
         .maybeSingle();
 
       if (error) {
-        console.error('ensureMembershipOrShowOnboarding failed', error);
+        console.error('tryRestoreMembership failed', error);
       }
 
       if (data && data.groups) {
         state.currentMembership = data;
         state.currentGroup = data.groups;
+        console.log('[auth] membership restored', { userId, groupId: data.groups.id });
         persistSessionRecovery({
           group: data.groups,
           displayName: state.currentProfile?.display_name || ''
@@ -223,8 +340,21 @@
         return true;
       }
 
+      return false;
+    }
+
+    async function ensureMembershipOrShowOnboarding() {
+      const restored = await tryRestoreMembership(state.currentUser?.id);
+      if (restored) {
+        return true;
+      }
+
       const restoredFromCache = await tryRestoreMembershipFromDeviceCache();
       if (restoredFromCache) {
+        console.log('[auth] membership restored from device cache', {
+          userId: state.currentUser?.id,
+          groupId: state.currentGroup?.id
+        });
         return true;
       }
 
@@ -385,6 +515,7 @@
 
 
     async function joinGroupFlow(groupName, password) {
+      console.log('[auth] join flow triggered', { userId: state.currentUser?.id, groupName });
       const { data: targetGroup, error: groupError } = await supabaseClient
         .from('groups')
         .select('*')

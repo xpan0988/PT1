@@ -19,16 +19,17 @@
        App Layout
        header + sidebar + main views + chat panel
        ========================= -->
-  <header>
+  <header id="appHeader">
     <div class="logo">Study<span>Mesh</span></div>
     <div class="header-right">
       <div class="project-tag" id="headerGroupTag">Student Group Board</div>
       <button class="btn btn-secondary btn-small" onclick="restartGroupFlow()">Restart Group Flow</button>
+      <button class="btn btn-secondary btn-small" onclick="signOut()">Sign Out</button>
       <div class="member-avatars" id="memberAvatars"></div>
     </div>
   </header>
 
-  <div class="app-shell">
+  <div class="app-shell" id="appShell">
     <aside class="sidebar">
       <div class="side-group">
         <div class="side-label">Navigation</div>
@@ -334,6 +335,29 @@
   </div>
 
   <div class="toast-container" id="toastContainer"></div>
+
+  <div class="modal-overlay" id="authModal">
+    <div class="modal-card">
+      <div>
+        <div class="modal-title">StudyMesh Sign In</div>
+        <div class="modal-subtitle">Sign in with email/password. Guest mode is optional fallback.</div>
+      </div>
+      <div>
+        <div class="field-label">Email</div>
+        <input type="email" id="authEmailInput" placeholder="you@example.com">
+      </div>
+      <div>
+        <div class="field-label">Password</div>
+        <input type="password" id="authPasswordInput" placeholder="At least 6 characters">
+      </div>
+      <div class="modal-error open" id="authStatusMessage"></div>
+      <div class="panel-actions">
+        <button class="btn btn-secondary" onclick="handleEmailSignIn()">Sign In</button>
+        <button class="btn btn-primary" onclick="handleEmailSignUp()">Sign Up</button>
+        <button class="btn btn-ghost" onclick="handleGuestContinue()">Continue as Guest</button>
+      </div>
+    </div>
+  </div>
 
   <!-- =========================
        Onboarding / Group Modal
