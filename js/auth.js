@@ -238,6 +238,7 @@
       clearGroupModalError();
 
       updateHeaderGroupTag();
+      switchView('dashboard');
       document.getElementById('groupModal').classList.remove('open');
       showAuthUI();
     }
