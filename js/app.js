@@ -47,6 +47,28 @@
       refreshAll();
     }
 
+    async function handlePostAuthSuccess() {
+      hideAuthUI();
+      await runStartupPhase('ensureProfile', ensureProfile);
+      const hasMembership = await runStartupPhase('membership resolution', ensureMembershipOrShowOnboarding);
+      if (!hasMembership) return;
+
+      state.isHydratingInitialData = true;
+      try {
+        await runStartupPhase('subscription setup', ensureGroupRealtimeSubscription);
+        await runStartupPhase('group hydration', hydrateCurrentGroupData);
+        updateHeaderGroupTag();
+        seedInitialData();
+        await runStartupPhase('initial render block', async () => renderInitialVisibleSurfaces());
+      } finally {
+        state.isHydratingInitialData = false;
+      }
+
+      await flushPendingRealtimeTables();
+    }
+
+    window.handlePostAuthSuccess = handlePostAuthSuccess;
+
     async function init() {
       // Note: run StudyMesh from a local HTTP server (for example http://localhost),
       // not from file://, so browser auth/storage APIs can work correctly.
@@ -58,28 +80,15 @@
       });
 
       console.time('[startup] total');
-      await runStartupPhase('initAuth', initAuth);
-      await runStartupPhase('ensureProfile', ensureProfile);
-      const hasMembership = await runStartupPhase('membership resolution', ensureMembershipOrShowOnboarding);
-      if (!hasMembership) {
+      await runStartupPhase('initSupabase', initSupabase);
+      const session = await runStartupPhase('restoreSession', restoreSession);
+      if (!session) {
+        showAuthUI();
         console.timeEnd('[startup] total');
         return;
       }
 
-      state.isHydratingInitialData = true;
-      try {
-        // Subscribe before hydration so updates committed during startup are queued
-        // instead of being missed between snapshot queries and channel attach.
-        await runStartupPhase('subscription setup', ensureGroupRealtimeSubscription);
-        await runStartupPhase('group hydration', hydrateCurrentGroupData);
-        updateHeaderGroupTag();
-        seedInitialData();
-        await runStartupPhase('initial render block', async () => renderInitialVisibleSurfaces());
-      } finally {
-        state.isHydratingInitialData = false;
-      }
-
-      await flushPendingRealtimeTables();
+      await handlePostAuthSuccess();
       console.timeEnd('[startup] total');
     }
 

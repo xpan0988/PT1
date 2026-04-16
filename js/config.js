@@ -14,6 +14,10 @@ const SUPABASE_URL = "https://hggtasggdhdgiyhatgfu.supabase.co";
       }
     );
 
+    async function initSupabase() {
+      return supabaseClient;
+    }
+
     const FILE_LIBRARY = [
       { name: 'interview_notes.pdf', icon: '📄', type: 'PDF' },
       { name: 'wireframe_v3.fig', icon: '🎨', type: 'FIG' },
