@@ -230,6 +230,15 @@ async function bootstrapGroupKeyEnvelopes(groupId, memberIds) {
 
 async function ensureGroupContentKey(groupId = state.currentGroup?.id) {
   if (!groupId || !state.currentUser?.id) return null;
+  if (!state.hasResolvedMembership || !state.currentGroup?.id || state.currentGroup.id !== groupId || !state.currentMembership) {
+    console.log('Skipping group content key init; group context not ready', {
+      groupId,
+      currentGroupId: state.currentGroup?.id || null,
+      hasResolvedMembership: !!state.hasResolvedMembership,
+      hasMembership: !!state.currentMembership
+    });
+    return null;
+  }
 
   if (!state.groupContentKeys) state.groupContentKeys = {};
   if (state.groupContentKeys[groupId]) {
@@ -267,6 +276,9 @@ async function getDecryptedGroupKey(groupId = state.currentGroup?.id) {
 
 async function encryptGroupMessageText(groupId, plaintext) {
   const groupKey = await ensureGroupContentKey(groupId);
+  if (!groupKey) {
+    throw new Error('Cannot encrypt message without an active group key context');
+  }
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: nonce },

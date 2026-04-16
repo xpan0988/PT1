@@ -90,15 +90,35 @@
 
       console.time('[startup] total');
       await runStartupPhase('initSupabase', initSupabase);
-      const session = await runStartupPhase('restoreSession', restoreSession);
-      if (!session) {
-        showAuthUI();
-        console.timeEnd('[startup] total');
-        return;
+      state.isAuthBootstrapping = true;
+      if (typeof setAuthActionAvailability === 'function') {
+        setAuthActionAvailability(false, 'Restoring previous session…');
       }
+      try {
+        const session = await runStartupPhase('restoreSession', restoreSession);
+        if (!session) {
+          showAuthUI();
+          return;
+        }
 
-      await handlePostAuthSuccess();
-      console.timeEnd('[startup] total');
+        try {
+          await handlePostAuthSuccess();
+        } catch (postAuthError) {
+          console.error('post-auth initialization failed after session restore', postAuthError);
+          showAuthUI();
+          const statusEl = document.getElementById('authStatusMessage');
+          if (statusEl) {
+            statusEl.textContent = postAuthError?.message || 'Session restored, but app initialization failed.';
+          }
+        }
+      } finally {
+        state.isAuthBootstrapping = false;
+        if (typeof setAuthActionAvailability === 'function') {
+          const statusEl = document.getElementById('authStatusMessage');
+          setAuthActionAvailability(!state.isAuthActionPending, statusEl?.textContent || '');
+        }
+        console.timeEnd('[startup] total');
+      }
     }
 
 
