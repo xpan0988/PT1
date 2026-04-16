@@ -29,6 +29,10 @@
       localStorage.setItem(SESSION_RECOVERY_KEY, JSON.stringify(payload));
     }
 
+    function clearSessionRecovery() {
+      localStorage.removeItem(SESSION_RECOVERY_KEY);
+    }
+
     function buildUniqueDisplayName(baseName, existingMembers) {
       const cleanedBase = String(baseName || '').trim() || 'User';
       const existingNames = new Set((existingMembers || [])
@@ -164,6 +168,7 @@
     async function signOut() {
       const { error } = await supabaseClient.auth.signOut();
       if (error) throw error;
+      clearSessionRecovery();
       state.currentUser = null;
       state.currentProfile = null;
       state.currentGroup = null;
