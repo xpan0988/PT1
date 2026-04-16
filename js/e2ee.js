@@ -242,9 +242,14 @@ async function ensureGroupContentKey(groupId = state.currentGroup?.id) {
   let envelope = await getMyGroupKeyEnvelope(groupId, state.currentUser.id, E2EE_KEY_VERSION);
 
   if (!envelope) {
-    const memberIds = state.members.map(member => member.dbId).filter(Boolean);
-    await bootstrapGroupKeyEnvelopes(groupId, memberIds);
-    envelope = await getMyGroupKeyEnvelope(groupId, state.currentUser.id, E2EE_KEY_VERSION);
+    const existingEnvelopeCount = await getGroupKeyEnvelopeCount(groupId, E2EE_KEY_VERSION);
+    if (existingEnvelopeCount === 0) {
+      const memberIds = state.members.map(member => member.dbId).filter(Boolean);
+      await bootstrapGroupKeyEnvelopes(groupId, memberIds);
+      envelope = await getMyGroupKeyEnvelope(groupId, state.currentUser.id, E2EE_KEY_VERSION);
+    } else {
+      throw new Error('Missing group key envelope for current user in an existing encrypted group');
+    }
   }
 
   if (!envelope) {
