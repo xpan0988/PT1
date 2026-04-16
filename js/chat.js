@@ -9,16 +9,9 @@
       const sender = state.members[senderId];
       if (!sender) return;
 
-      const { error } = await supabaseClient
-        .from('messages')
-        .insert({
-          group_id: state.currentGroup.id,
-          sender_user_id: sender.dbId,
-          type: 'text',
-          text
-        });
-
-      if (error) {
+      try {
+        await createEncryptedChatMessage(state.currentGroup.id, sender.dbId, text);
+      } catch (error) {
         console.error('sendMessage failed', error);
         showToast('Failed to send message', 'alert');
         return;

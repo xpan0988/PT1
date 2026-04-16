@@ -22,4 +22,8 @@ const state = {
       isHydratingInitialData: false,
       pendingRealtimeTables: new Set(),
       hasRenderedSchedule: false,
+      // MVP E2EE caches
+      groupContentKeys: {},
+      userKeypairReady: false,
+      userKeypair: null,
     };

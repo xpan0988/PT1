@@ -27,6 +27,14 @@
       // Member data is a dependency for mapping user ids in the datasets below.
       await runStartupPhase('loadMembers', loadMembers);
 
+      // Ensure this user can decrypt group messages before loading chat history.
+      try {
+        await runStartupPhase('ensureGroupContentKey', () => ensureGroupContentKey(state.currentGroup.id));
+      } catch (error) {
+        // MVP: keep app usable even if key bootstrap/decrypt hits a transient issue.
+        console.warn('ensureGroupContentKey failed during hydration', error);
+      }
+
       // These loaders are independent once members are ready.
       await Promise.all([
         runStartupPhase('loadTasks', loadTasks),
@@ -50,6 +58,7 @@
     async function handlePostAuthSuccess() {
       hideAuthUI();
       await runStartupPhase('ensureProfile', ensureProfile);
+      await runStartupPhase('ensureLocalUserKeypair', () => ensureLocalUserKeypair(state.currentUser?.id));
       const hasMembership = await runStartupPhase('membership resolution', ensureMembershipOrShowOnboarding);
       if (!hasMembership) return;
 

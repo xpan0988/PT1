@@ -83,6 +83,9 @@
       state.currentView = 'dashboard';
       state.hasRenderedSchedule = false;
       state.isHydratingInitialData = false;
+      state.groupContentKeys = {};
+      state.userKeypairReady = false;
+      state.userKeypair = null;
     }
 
     function buildUniqueDisplayName(baseName, existingMembers) {
@@ -717,6 +720,7 @@
       state.pendingRealtimeTables = new Set();
       state.hasRenderedSchedule = false;
       state.isHydratingInitialData = false;
+      state.groupContentKeys = {};
 
       updateHeaderGroupTag();
       renderAvatars();

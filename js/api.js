@@ -1,5 +1,65 @@
 // Supabase data loading and persistence
 
+    async function upsertMemberPublicKey(userId, publicKeyJwk, keyVersion = 1) {
+      const { error } = await supabaseClient
+        .from('member_public_keys')
+        .upsert({
+          user_id: userId,
+          public_key: publicKeyJwk,
+          key_version: keyVersion
+        }, {
+          onConflict: 'user_id,key_version'
+        });
+
+      if (error) throw error;
+    }
+
+    async function getMemberPublicKeys(userIds) {
+      if (!Array.isArray(userIds) || userIds.length === 0) return [];
+      const { data, error } = await supabaseClient
+        .from('member_public_keys')
+        .select('*')
+        .in('user_id', userIds);
+
+      if (error) throw error;
+      return data || [];
+    }
+
+    async function getMyGroupKeyEnvelope(groupId, userId, keyVersion = 1) {
+      const { data, error } = await supabaseClient
+        .from('group_key_envelopes')
+        .select('*')
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .eq('key_version', keyVersion)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data || null;
+    }
+
+    async function upsertGroupKeyEnvelopes(envelopes) {
+      if (!Array.isArray(envelopes) || envelopes.length === 0) return;
+      const { error } = await supabaseClient
+        .from('group_key_envelopes')
+        .upsert(envelopes, {
+          onConflict: 'group_id,user_id,key_version'
+        });
+
+      if (error) throw error;
+    }
+
+    async function createMessageRecord(messageInput) {
+      const { data, error } = await supabaseClient
+        .from('messages')
+        .insert(messageInput)
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      return data;
+    }
+
     async function loadMembers() {
       if (!state.currentGroup) {
         state.members = [];
@@ -64,18 +124,20 @@
         return;
       }
 
-      const dbMessages = (data || []).map(row => {
+      const dbMessages = [];
+      for (const row of (data || [])) {
         const senderIndex = state.memberIndexByDbId.get(row.sender_user_id) ?? -1;
-        return {
+        const text = await getRenderableMessageText(row);
+        dbMessages.push({
           id: row.id,
           type: row.type || 'text',
           senderId: senderIndex,
-          text: row.text,
+          text,
           time: formatTime(new Date(row.created_at || Date.now())),
           createdAt: row.created_at,
           alertId: null
-        };
-      }).filter(msg => msg.senderId !== -1);
+        });
+      }
 
       const alertMessages = state.alerts
         .map(alert => ({
@@ -89,7 +151,7 @@
         }))
         .filter(msg => msg.senderId !== -1);
 
-      state.messages = [...dbMessages, ...alertMessages].sort((a, b) => {
+      state.messages = [...dbMessages, ...alertMessages].filter(msg => msg.senderId !== -1).sort((a, b) => {
         const aTime = new Date(a.createdAt || Date.now()).getTime();
         const bTime = new Date(b.createdAt || Date.now()).getTime();
         return aTime - bTime;
@@ -272,19 +334,13 @@
 
 
     async function createFileMessage(groupId, senderUserId, fileDisplayText) {
-      const { data, error } = await supabaseClient
-        .from('messages')
-        .insert({
-          group_id: groupId,
-          sender_user_id: senderUserId,
-          type: 'file',
-          text: fileDisplayText
-        })
-        .select('*')
-        .single();
-
-      if (error) throw error;
-      return data;
+      return await createMessageRecord({
+        group_id: groupId,
+        sender_user_id: senderUserId,
+        type: 'file',
+        text: fileDisplayText,
+        is_encrypted: false
+      });
     }
 
 
