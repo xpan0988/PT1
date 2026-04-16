@@ -38,6 +38,21 @@
       return data || null;
     }
 
+    async function getGroupKeyEnvelopeCount(groupId, keyVersion = 1) {
+      if (!groupId) return 0;
+      const { count, error } = await supabaseClient
+        .from('group_key_envelopes')
+        .select('group_id', {
+          head: true,
+          count: 'exact'
+        })
+        .eq('group_id', groupId)
+        .eq('key_version', keyVersion);
+
+      if (error) throw error;
+      return count || 0;
+    }
+
     async function upsertGroupKeyEnvelopes(envelopes) {
       if (!Array.isArray(envelopes) || envelopes.length === 0) return;
       const { error } = await supabaseClient
