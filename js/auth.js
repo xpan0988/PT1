@@ -1,9 +1,38 @@
 // Authentication, profile, and group membership flows
     const SESSION_RECOVERY_KEY = 'studymesh.sessionRecovery';
 
-    function readSessionRecovery() {
+    function getSessionRecoveryKey(userId = state.currentUser?.id) {
+      const normalizedUserId = String(userId || '').trim();
+      if (!normalizedUserId) return SESSION_RECOVERY_KEY;
+      return `${SESSION_RECOVERY_KEY}.${normalizedUserId}`;
+    }
+
+    function clearSessionRecovery(userId = state.currentUser?.id) {
+      const scopedKey = getSessionRecoveryKey(userId);
+      localStorage.removeItem(scopedKey);
+
+      // Backward compatibility with the legacy unscoped cache key.
+      if (scopedKey !== SESSION_RECOVERY_KEY) {
+        localStorage.removeItem(SESSION_RECOVERY_KEY);
+      }
+    }
+
+    function readSessionRecovery(userId = state.currentUser?.id) {
       try {
-        return JSON.parse(localStorage.getItem(SESSION_RECOVERY_KEY) || 'null');
+        const scopedKey = getSessionRecoveryKey(userId);
+        const scopedRaw = localStorage.getItem(scopedKey);
+
+        if (scopedRaw) {
+          return JSON.parse(scopedRaw);
+        }
+
+        // Only fall back to legacy global cache for the active user context.
+        if (scopedKey !== SESSION_RECOVERY_KEY) {
+          const legacyRaw = localStorage.getItem(SESSION_RECOVERY_KEY);
+          return legacyRaw ? JSON.parse(legacyRaw) : null;
+        }
+
+        return null;
       } catch (error) {
         console.warn('Failed to parse session recovery data', error);
         return null;
@@ -12,7 +41,10 @@
 
     function persistSessionRecovery({ group, password, displayName }) {
       if (!group?.id || !group?.name) return;
-      const existing = readSessionRecovery();
+      const userId = state.currentUser?.id;
+      if (!userId) return;
+
+      const existing = readSessionRecovery(userId);
       const shouldReuseExistingPassword = (
         password == null &&
         existing?.groupId &&
@@ -24,9 +56,33 @@
         groupName: group.name,
         password: String(resolvedPassword || ''),
         displayName: String(displayName || ''),
+        userId,
         savedAt: new Date().toISOString()
       };
-      localStorage.setItem(SESSION_RECOVERY_KEY, JSON.stringify(payload));
+      localStorage.setItem(getSessionRecoveryKey(userId), JSON.stringify(payload));
+    }
+
+    function resetAccountScopedState() {
+      state.currentGroup = null;
+      state.currentMembership = null;
+      state.currentProfile = null;
+      state.members = [];
+      state.tasks = [];
+      state.alerts = [];
+      state.messages = [];
+      state.resources = [];
+      state.availabilityBlocks = [];
+      state.contributions = [];
+      state.editingTaskId = null;
+      state.memberIndexByDbId = new Map();
+      state.memberByDbId = new Map();
+      state.realtimeChannels = [];
+      state.realtimeGroupId = null;
+      state.pendingRealtimeTables = new Set();
+      state.openScheduleSections = {};
+      state.currentView = 'dashboard';
+      state.hasRenderedSchedule = false;
+      state.isHydratingInitialData = false;
     }
 
     function buildUniqueDisplayName(baseName, existingMembers) {
@@ -162,13 +218,26 @@
     }
 
     async function signOut() {
+      const outgoingUserId = state.currentUser?.id;
+      clearSessionRecovery(outgoingUserId);
+
       const { error } = await supabaseClient.auth.signOut();
       if (error) throw error;
+
       state.currentUser = null;
-      state.currentProfile = null;
-      state.currentGroup = null;
-      state.currentMembership = null;
       await unsubscribeRealtime();
+      resetAccountScopedState();
+      clearSessionRecovery();
+
+      document.getElementById('authStatusMessage').textContent = '';
+      document.getElementById('authEmailInput').value = '';
+      document.getElementById('authPasswordInput').value = '';
+      document.getElementById('groupUserName').value = '';
+      document.getElementById('groupNameInput').value = '';
+      document.getElementById('groupPasswordInput').value = '';
+      clearGroupModalError();
+
+      updateHeaderGroupTag();
       document.getElementById('groupModal').classList.remove('open');
       showAuthUI();
     }
@@ -241,7 +310,7 @@
     }
 
     async function tryRestoreMembershipFromDeviceCache() {
-      const cached = readSessionRecovery();
+      const cached = readSessionRecovery(state.currentUser?.id);
       if (!cached?.groupId || !cached?.password) return false;
 
       const { data: targetGroup, error: groupError } = await supabaseClient
@@ -368,7 +437,7 @@
       setGroupMode('create');
       clearGroupModalError();
       document.getElementById('groupUserName').value = state.currentProfile?.display_name || '';
-      const cached = readSessionRecovery();
+      const cached = readSessionRecovery(state.currentUser?.id);
       document.getElementById('groupNameInput').value = cached?.groupName || '';
       document.getElementById('groupPasswordInput').value = cached?.password || '';
       document.getElementById('groupModal').classList.add('open');
