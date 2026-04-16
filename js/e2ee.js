@@ -108,9 +108,9 @@ async function loadLocalPrivateKey(userId) {
   }
 }
 
-async function upsertUserPublicKey(userId, publicKeyJwk, keyVersion = E2EE_KEY_VERSION) {
+async function upsertUserPublicKey(userId, publicKeyJwk) {
   if (!userId || !publicKeyJwk) return;
-  await upsertMemberPublicKey(userId, publicKeyJwk, keyVersion);
+  await upsertMemberPublicKey(userId, publicKeyJwk);
 }
 
 async function ensureLocalUserKeypair(userId = state.currentUser?.id) {
@@ -118,7 +118,7 @@ async function ensureLocalUserKeypair(userId = state.currentUser?.id) {
 
   const existingPrivateKey = await loadLocalPrivateKey(userId);
   if (existingPrivateKey && state.userKeypair?.publicJwk) {
-    await upsertUserPublicKey(userId, state.userKeypair.publicJwk, E2EE_KEY_VERSION);
+    await upsertUserPublicKey(userId, state.userKeypair.publicJwk);
     return state.userKeypair;
   }
 
@@ -152,7 +152,7 @@ async function ensureLocalUserKeypair(userId = state.currentUser?.id) {
   };
   state.userKeypairReady = true;
 
-  await upsertUserPublicKey(userId, publicJwk, E2EE_KEY_VERSION);
+  await upsertUserPublicKey(userId, publicJwk);
   return state.userKeypair;
 }
 

@@ -1,14 +1,15 @@
 // Supabase data loading and persistence
 
-    async function upsertMemberPublicKey(userId, publicKeyJwk, keyVersion = 1) {
+    async function upsertMemberPublicKey(userId, publicKeyJwk) {
+      // `member_public_keys` is user-scoped in MVP. Do not write `key_version` here;
+      // versioned key metadata belongs to `group_key_envelopes` and `messages`.
       const { error } = await supabaseClient
         .from('member_public_keys')
         .upsert({
           user_id: userId,
-          public_key: publicKeyJwk,
-          key_version: keyVersion
+          public_key: publicKeyJwk
         }, {
-          onConflict: 'user_id,key_version'
+          onConflict: 'user_id'
         });
 
       if (error) throw error;
