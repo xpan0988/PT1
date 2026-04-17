@@ -578,6 +578,20 @@
       const pending = Array.from(state.pendingRealtimeTables);
       state.pendingRealtimeTables.clear();
 
+      if (pending.includes('group_members')) {
+        await loadMembers();
+        await ensureGroupContentKey(state.currentGroup?.id);
+      }
+      if (pending.includes('member_public_keys')) {
+        await ensureGroupContentKey(state.currentGroup?.id);
+      }
+      if (pending.includes('group_key_envelopes')) {
+        if (state.currentGroup?.id) {
+          delete state.groupContentKeys[state.currentGroup.id];
+        }
+        await ensureGroupContentKey(state.currentGroup?.id);
+      }
+
       if (pending.includes('alerts')) {
         await loadAlerts();
         await loadMessages();
