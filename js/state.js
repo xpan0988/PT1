@@ -27,6 +27,8 @@ const state = {
       hasRenderedSchedule: false,
       // MVP E2EE caches
       groupContentKeys: {},
+      groupEnvelopeBackfillInFlight: {},
+      groupEnvelopeBackfillLastRunAt: {},
       userKeypairReady: false,
       userKeypair: null,
       e2eeInitWarning: '',

@@ -13,7 +13,12 @@
         await createEncryptedChatMessage(state.currentGroup.id, sender.dbId, text);
       } catch (error) {
         console.error('sendMessage failed', error);
-        showToast('Failed to send message', 'alert');
+        const errorMessage = String(error?.message || '');
+        if (errorMessage.includes('Missing group key envelope')) {
+          showToast('Encrypted chat is not ready yet for your account. Ask an existing member to open the group so your key envelope can be backfilled.', 'alert');
+        } else {
+          showToast('Failed to send message', 'alert');
+        }
         return;
       }
 
