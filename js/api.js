@@ -29,7 +29,7 @@
     async function getMyGroupKeyEnvelope(groupId, userId, keyVersion = 1) {
       const { data, error } = await supabaseClient
         .from('group_key_envelopes')
-        .select('*')
+        .select('group_id,user_id,encrypted_group_key,key_version,algorithm')
         .eq('group_id', groupId)
         .eq('user_id', userId)
         .eq('key_version', keyVersion)
@@ -56,9 +56,17 @@
 
     async function upsertGroupKeyEnvelopes(envelopes) {
       if (!Array.isArray(envelopes) || envelopes.length === 0) return;
+      const normalizedEnvelopes = envelopes.map((row) => ({
+        group_id: row.group_id,
+        user_id: row.user_id,
+        encrypted_group_key: row.encrypted_group_key,
+        key_version: row.key_version,
+        algorithm: row.algorithm
+      }));
+
       const { error } = await supabaseClient
         .from('group_key_envelopes')
-        .upsert(envelopes, {
+        .upsert(normalizedEnvelopes, {
           onConflict: 'group_id,user_id,key_version'
         });
 
