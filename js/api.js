@@ -54,6 +54,29 @@
       return count || 0;
     }
 
+    async function getGroupMemberUserIds(groupId) {
+      if (!groupId) return [];
+      const { data, error } = await supabaseClient
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', groupId);
+
+      if (error) throw error;
+      return (data || []).map((row) => row.user_id).filter(Boolean);
+    }
+
+    async function getGroupKeyEnvelopes(groupId, keyVersion = 1) {
+      if (!groupId) return [];
+      const { data, error } = await supabaseClient
+        .from('group_key_envelopes')
+        .select('group_id,user_id,encrypted_group_key,key_version,algorithm')
+        .eq('group_id', groupId)
+        .eq('key_version', keyVersion);
+
+      if (error) throw error;
+      return data || [];
+    }
+
     async function upsertGroupKeyEnvelopes(envelopes) {
       if (!Array.isArray(envelopes) || envelopes.length === 0) return;
       const normalizedEnvelopes = envelopes.map((row) => ({
@@ -507,6 +530,31 @@
             syncMeetingRecommendationUI();
             renderSnapshots();
             updateStatusChips();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'group_members', filter: groupFilter }, async () => {
+          await runRealtimeHandler('group_members', async () => {
+            await loadMembers();
+            await ensureGroupContentKey(state.currentGroup?.id);
+            await loadMessages();
+            renderAvatars();
+            populateMemberSelects();
+            renderChatMessages();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'member_public_keys' }, async () => {
+          await runRealtimeHandler('member_public_keys', async () => {
+            await ensureGroupContentKey(state.currentGroup?.id);
+            await loadMessages();
+            renderChatMessages();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'group_key_envelopes', filter: groupFilter }, async () => {
+          await runRealtimeHandler('group_key_envelopes', async () => {
+            delete state.groupContentKeys[groupId];
+            await ensureGroupContentKey(state.currentGroup?.id);
+            await loadMessages();
+            renderChatMessages();
           });
         });
 
