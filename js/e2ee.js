@@ -5,7 +5,7 @@
 const E2EE_STORAGE_PREFIX = 'studymesh.e2ee.userkey';
 const E2EE_KEY_VERSION = 1;
 const E2EE_MESSAGE_ENCRYPTION_VERSION = 'aes-gcm-v1';
-const E2EE_ENVELOPE_ENCRYPTION_VERSION = 'rsa-oaep-v1';
+const E2EE_ENVELOPE_ALGORITHM = 'rsa-oaep-v1';
 const E2EE_DECRYPT_FAIL_PLACEHOLDER = 'Unable to decrypt message';
 
 function e2eeUserStorageKey(userId) {
@@ -168,13 +168,16 @@ async function importGroupContentKey(rawKeyBytes) {
 
 async function decryptGroupKeyEnvelope(envelopeRecord, privateKey) {
   if (!envelopeRecord || !privateKey) return null;
-  const ciphertext = envelopeRecord.ciphertext || envelopeRecord.encrypted_key;
-  if (!ciphertext) return null;
+  const encryptedGroupKey =
+    envelopeRecord.encrypted_group_key ||
+    envelopeRecord.encrypted_key ||
+    envelopeRecord.ciphertext;
+  if (!encryptedGroupKey) return null;
 
   const decryptedRaw = await crypto.subtle.decrypt(
     { name: 'RSA-OAEP' },
     privateKey,
-    base64ToBytes(ciphertext)
+    base64ToBytes(encryptedGroupKey)
   );
 
   return await importGroupContentKey(decryptedRaw);
@@ -214,9 +217,8 @@ async function bootstrapGroupKeyEnvelopes(groupId, memberIds) {
       group_id: groupId,
       user_id: memberId,
       key_version: E2EE_KEY_VERSION,
-      encryption_version: E2EE_ENVELOPE_ENCRYPTION_VERSION,
-      ciphertext: bytesToBase64(wrappedKey),
-      nonce: null
+      algorithm: E2EE_ENVELOPE_ALGORITHM,
+      encrypted_group_key: bytesToBase64(wrappedKey)
     });
   }
 
@@ -248,14 +250,36 @@ async function ensureGroupContentKey(groupId = state.currentGroup?.id) {
   await ensureLocalUserKeypair(state.currentUser.id);
   const privateKey = await loadLocalPrivateKey(state.currentUser.id);
 
-  let envelope = await getMyGroupKeyEnvelope(groupId, state.currentUser.id, E2EE_KEY_VERSION);
+  let envelope = null;
+  try {
+    envelope = await getMyGroupKeyEnvelope(groupId, state.currentUser.id, E2EE_KEY_VERSION);
+  } catch (error) {
+    console.error('[e2ee:envelope-fetch] getMyGroupKeyEnvelope failed', { groupId, userId: state.currentUser.id, error });
+    throw error;
+  }
 
   if (!envelope) {
-    const existingEnvelopeCount = await getGroupKeyEnvelopeCount(groupId, E2EE_KEY_VERSION);
+    let existingEnvelopeCount = 0;
+    try {
+      existingEnvelopeCount = await getGroupKeyEnvelopeCount(groupId, E2EE_KEY_VERSION);
+    } catch (error) {
+      console.error('[e2ee:envelope-fetch] getGroupKeyEnvelopeCount failed', { groupId, keyVersion: E2EE_KEY_VERSION, error });
+      throw error;
+    }
     if (existingEnvelopeCount === 0) {
       const memberIds = state.members.map(member => member.dbId).filter(Boolean);
-      await bootstrapGroupKeyEnvelopes(groupId, memberIds);
-      envelope = await getMyGroupKeyEnvelope(groupId, state.currentUser.id, E2EE_KEY_VERSION);
+      try {
+        await bootstrapGroupKeyEnvelopes(groupId, memberIds);
+      } catch (error) {
+        console.error('[e2ee:envelope-bootstrap] bootstrapGroupKeyEnvelopes failed', { groupId, memberCount: memberIds.length, error });
+        throw error;
+      }
+      try {
+        envelope = await getMyGroupKeyEnvelope(groupId, state.currentUser.id, E2EE_KEY_VERSION);
+      } catch (error) {
+        console.error('[e2ee:envelope-fetch] getMyGroupKeyEnvelope after bootstrap failed', { groupId, userId: state.currentUser.id, error });
+        throw error;
+      }
     } else {
       throw new Error('Missing group key envelope for current user in an existing encrypted group');
     }
@@ -327,17 +351,28 @@ async function getRenderableMessageText(messageRecord) {
 }
 
 async function createEncryptedChatMessage(groupId, senderUserId, plaintext) {
-  const encrypted = await encryptGroupMessageText(groupId, plaintext);
+  let encrypted;
+  try {
+    encrypted = await encryptGroupMessageText(groupId, plaintext);
+  } catch (error) {
+    console.error('[e2ee:message-encryption] encryptGroupMessageText failed', { groupId, senderUserId, error });
+    throw error;
+  }
 
-  return await createMessageRecord({
-    group_id: groupId,
-    sender_user_id: senderUserId,
-    type: 'text',
-    text: null,
-    is_encrypted: true,
-    ciphertext: encrypted.ciphertext,
-    nonce: encrypted.nonce,
-    key_version: encrypted.keyVersion,
-    encryption_version: encrypted.encryptionVersion
-  });
+  try {
+    return await createMessageRecord({
+      group_id: groupId,
+      sender_user_id: senderUserId,
+      type: 'text',
+      text: null,
+      is_encrypted: true,
+      ciphertext: encrypted.ciphertext,
+      nonce: encrypted.nonce,
+      key_version: encrypted.keyVersion,
+      encryption_version: encrypted.encryptionVersion
+    });
+  } catch (error) {
+    console.error('[e2ee:message-insert] createMessageRecord failed', { groupId, senderUserId, error });
+    throw error;
+  }
 }
