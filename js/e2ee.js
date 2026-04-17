@@ -7,6 +7,7 @@ const E2EE_KEY_VERSION = 1;
 const E2EE_MESSAGE_ENCRYPTION_VERSION = 'aes-gcm-v1';
 const E2EE_ENVELOPE_ALGORITHM = 'rsa-oaep-v1';
 const E2EE_DECRYPT_FAIL_PLACEHOLDER = 'Unable to decrypt message';
+const rawGroupKeyByCryptoKey = new WeakMap();
 
 function e2eeUserStorageKey(userId) {
   return `${E2EE_STORAGE_PREFIX}.${userId}`;
@@ -179,8 +180,26 @@ async function decryptGroupKeyEnvelope(envelopeRecord, privateKey) {
     privateKey,
     base64ToBytes(encryptedGroupKey)
   );
+  const rawGroupKey = new Uint8Array(decryptedRaw);
+  const groupKey = await importGroupContentKey(rawGroupKey);
+  rawGroupKeyByCryptoKey.set(groupKey, rawGroupKey);
+  return groupKey;
+}
 
-  return await importGroupContentKey(decryptedRaw);
+async function getRawGroupContentKey(groupKey) {
+  if (!groupKey) return null;
+
+  const cachedRaw = rawGroupKeyByCryptoKey.get(groupKey);
+  if (cachedRaw) return cachedRaw;
+
+  try {
+    const exportedRaw = new Uint8Array(await crypto.subtle.exportKey('raw', groupKey));
+    rawGroupKeyByCryptoKey.set(groupKey, exportedRaw);
+    return exportedRaw;
+  } catch (error) {
+    console.warn('[e2ee:envelope-backfill] group key is not exportable and no cached raw key is available');
+    return null;
+  }
 }
 
 async function bootstrapGroupKeyEnvelopes(groupId, memberIds) {
@@ -194,6 +213,7 @@ async function bootstrapGroupKeyEnvelopes(groupId, memberIds) {
     ['encrypt', 'decrypt']
   );
   const rawGroupKey = new Uint8Array(await crypto.subtle.exportKey('raw', groupKey));
+  rawGroupKeyByCryptoKey.set(groupKey, rawGroupKey);
 
   const publicKeyRows = await getMemberPublicKeys(memberIds);
   const publicKeyByUserId = new Map((publicKeyRows || []).map(row => [row.user_id, row]));
@@ -307,7 +327,15 @@ async function backfillMissingGroupKeyEnvelopes(groupId, groupKey, keyVersion = 
 
   const publicKeyRows = await getMemberPublicKeys(targetMemberIds);
   const keyRowByUserId = new Map((publicKeyRows || []).map((row) => [row.user_id, row]));
-  const rawGroupKey = new Uint8Array(await crypto.subtle.exportKey('raw', groupKey));
+  const rawGroupKey = await getRawGroupContentKey(groupKey);
+  if (!rawGroupKey) {
+    console.warn('[e2ee:envelope-backfill] cannot backfill envelopes without raw group key material', {
+      groupId,
+      keyVersion,
+      targetCount: targetMemberIds.length
+    });
+    return { insertedCount: 0, targetCount: targetMemberIds.length };
+  }
   const envelopeRows = [];
 
   for (const memberId of targetMemberIds) {
