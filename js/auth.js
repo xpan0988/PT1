@@ -79,6 +79,9 @@
       state.memberByDbId = new Map();
       state.realtimeChannels = [];
       state.realtimeGroupId = null;
+      state.realtimePendingGroupId = null;
+      state.realtimeRetryTimer = null;
+      state.realtimeRetryCount = 0;
       state.pendingRealtimeTables = new Set();
       state.openScheduleSections = {};
       state.currentView = 'dashboard';
@@ -837,6 +840,8 @@
       state.memberIndexByDbId = new Map();
       state.memberByDbId = new Map();
       state.pendingRealtimeTables = new Set();
+      state.realtimePendingGroupId = null;
+      state.realtimeRetryCount = 0;
       state.hasRenderedSchedule = false;
       state.isHydratingInitialData = false;
       state.groupContentKeys = {};
