@@ -432,9 +432,10 @@
     }
 
 
-    const REALTIME_SUBSCRIBE_MAX_WAIT_MS = 30000;
+    const REALTIME_SUBSCRIBE_MAX_WAIT_MS = 15000;
     const REALTIME_RETRY_BASE_DELAY_MS = 1200;
     const REALTIME_RETRY_MAX_DELAY_MS = 10000;
+    const REALTIME_MESSAGES_ONLY_MODE = true;
 
     function clearRealtimeRetryTimer() {
       if (!state.realtimeRetryTimer) return;
@@ -469,20 +470,22 @@
       }, delayMs);
     }
 
-    function waitForRealtimeSubscribed(channel, groupId) {
+    function waitForRealtimeSubscribed(channel, groupId, attemptId) {
       return new Promise((resolve) => {
         let settled = false;
+        let latestStatus = 'JOINING';
         const settle = (status) => {
           if (settled) return;
           settled = true;
           clearTimeout(waitTimer);
-          resolve(status);
+          resolve({ status, latestStatus });
         };
 
         const waitTimer = setTimeout(() => settle('APP_MAX_WAIT_EXCEEDED'), REALTIME_SUBSCRIBE_MAX_WAIT_MS);
 
         channel.subscribe((nextStatus) => {
-          console.log('[realtime] channel status', { groupId, status: nextStatus });
+          latestStatus = nextStatus;
+          console.log('[realtime] channel status', { groupId, attemptId, status: nextStatus, retryCount: state.realtimeRetryCount });
           if (nextStatus === 'SUBSCRIBED') {
             settle('SUBSCRIBED');
             return;
@@ -491,10 +494,7 @@
             settle(nextStatus);
             return;
           }
-          if (nextStatus === 'TIMED_OUT') {
-            // Do not settle here. Supabase/Phoenix may still auto-rejoin and later emit SUBSCRIBED.
-            return;
-          }
+          if (nextStatus === 'TIMED_OUT') return;
         });
       });
     }
@@ -504,6 +504,7 @@
       clearRealtimeRetryTimer();
       state.realtimeRetryCount = 0;
       state.realtimePendingGroupId = null;
+      state.realtimeAttemptSeq = 0;
 
       if (activeChannels.length === 0) {
         state.realtimeChannels = [];
@@ -520,6 +521,11 @@
 
     async function subscribeToGroupRealtime(groupId) {
       if (!groupId) return;
+      const session = (await supabaseClient.auth.getSession())?.data?.session || null;
+      const sessionAccessToken = session?.access_token || null;
+      if (supabaseClient?.realtime?.setAuth) {
+        supabaseClient.realtime.setAuth(sessionAccessToken || null);
+      }
       if (!state.currentUser?.id || !state.currentMembership || state.currentGroup?.id !== groupId) {
         console.warn('[realtime] skipped subscribe: prerequisites not ready', {
           hasUser: !!state.currentUser?.id,
@@ -538,11 +544,14 @@
         return;
       }
       state.realtimePendingGroupId = groupId;
+      const attemptId = Number(state.realtimeAttemptSeq || 0) + 1;
+      state.realtimeAttemptSeq = attemptId;
       clearRealtimeRetryTimer();
 
       // Always clear stale channels before creating new group-scoped subscriptions.
       await unsubscribeRealtime();
       state.realtimePendingGroupId = groupId;
+      state.realtimeAttemptSeq = attemptId;
 
       const runRealtimeHandler = async (tableKey, work) => {
         if (state.isHydratingInitialData) {
@@ -553,104 +562,47 @@
       };
 
       const groupFilter = `group_id=eq.${groupId}`;
+      const channelTopic = `group-realtime:${groupId}`;
+      const messageBinding = { event: '*', schema: 'public', table: 'messages', filter: groupFilter };
+      console.log('[realtime] subscribe attempt start', {
+        attemptId,
+        userId: state.currentUser?.id || null,
+        membershipGroupId: state.currentMembership?.group_id || null,
+        currentGroupId: state.currentGroup?.id || null,
+        hasAccessToken: !!sessionAccessToken,
+        channelTopic,
+        messagesOnlyMode: REALTIME_MESSAGES_ONLY_MODE,
+        bindings: [messageBinding]
+      });
       const channel = supabaseClient
-        .channel(`group-realtime:${groupId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: groupFilter }, async () => {
+        .channel(channelTopic)
+        .on('postgres_changes', messageBinding, async () => {
           await runRealtimeHandler('messages', async () => {
-            await loadMessages();
-            renderChatMessages();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: groupFilter }, async () => {
-          await runRealtimeHandler('tasks', async () => {
-            await loadTasks();
-            recalculateContributions();
-            renderTasks();
-            renderCompletedTasks();
-            renderNearestDue();
-            renderProgress();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'alerts', filter: groupFilter }, async () => {
-          await runRealtimeHandler('alerts', async () => {
-            await loadAlerts();
-            await loadMessages();
-            renderAlerts();
-            renderChatMessages();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_reads' }, async () => {
-          await runRealtimeHandler('alerts', async () => {
-            await loadAlerts();
-            await loadMessages();
-            renderAlerts();
-            renderChatMessages();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'resources', filter: groupFilter }, async () => {
-          await runRealtimeHandler('resources', async () => {
-            await loadResources();
-            recalculateContributions();
-            renderResources();
-            populateResourceTypeFilter();
-            renderProgress();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_blocks' }, async (payload) => {
-          const payloadGroupId = payload?.new?.group_id || payload?.old?.group_id;
-          if (payloadGroupId && payloadGroupId !== state.currentGroup?.id) return;
-          await runRealtimeHandler('availability_blocks', async () => {
-            await loadAvailabilityBlocks();
-            if (state.currentView === 'timetable') {
-              renderSchedule();
-            }
-            syncMeetingRecommendationUI();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'group_members', filter: groupFilter }, async () => {
-          await runRealtimeHandler('group_members', async () => {
-            await loadMembers();
-            await ensureGroupContentKey(state.currentGroup?.id);
-            await loadMessages();
-            renderAvatars();
-            populateMemberSelects();
-            renderChatMessages();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'member_public_keys' }, async () => {
-          await runRealtimeHandler('member_public_keys', async () => {
-            await ensureGroupContentKey(state.currentGroup?.id);
-            await loadMessages();
-            renderChatMessages();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'group_key_envelopes', filter: groupFilter }, async () => {
-          await runRealtimeHandler('group_key_envelopes', async () => {
-            delete state.groupContentKeys[groupId];
-            await ensureGroupContentKey(state.currentGroup?.id);
             await loadMessages();
             renderChatMessages();
           });
         });
 
-      const status = await waitForRealtimeSubscribed(channel, groupId);
+      const { status, latestStatus } = await waitForRealtimeSubscribed(channel, groupId, attemptId);
+      const isLatestAttempt = state.realtimeAttemptSeq === attemptId;
 
-      if (status !== 'SUBSCRIBED') {
-        console.error('subscribeToGroupRealtime failed', status);
+      if (status !== 'SUBSCRIBED' && !(!isLatestAttempt && latestStatus === 'SUBSCRIBED')) {
+        console.error('subscribeToGroupRealtime failed', status, {
+          attemptId,
+          latestStatus,
+          isLatestAttempt
+        });
         await supabaseClient.removeChannel(channel);
         state.realtimePendingGroupId = null;
         scheduleRealtimeRetry(groupId, status);
         return;
+      }
+
+      if (!isLatestAttempt) {
+        console.warn('[realtime] late success ignored because a newer attempt exists', {
+          attemptId,
+          currentAttemptId: state.realtimeAttemptSeq
+        });
       }
 
       state.realtimeChannels = [channel];

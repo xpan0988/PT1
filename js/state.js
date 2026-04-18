@@ -23,6 +23,7 @@ const state = {
       realtimePendingGroupId: null,
       realtimeRetryTimer: null,
       realtimeRetryCount: 0,
+      realtimeAttemptSeq: 0,
       memberIndexByDbId: new Map(),
       memberByDbId: new Map(),
       isHydratingInitialData: false,
