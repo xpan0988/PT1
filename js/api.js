@@ -432,8 +432,78 @@
     }
 
 
+    const REALTIME_SUBSCRIBE_MAX_WAIT_MS = 30000;
+    const REALTIME_RETRY_BASE_DELAY_MS = 1200;
+    const REALTIME_RETRY_MAX_DELAY_MS = 10000;
+
+    function clearRealtimeRetryTimer() {
+      if (!state.realtimeRetryTimer) return;
+      clearTimeout(state.realtimeRetryTimer);
+      state.realtimeRetryTimer = null;
+    }
+
+    function scheduleRealtimeRetry(groupId, reason = 'unknown') {
+      if (!groupId || state.currentGroup?.id !== groupId || !state.currentMembership) return;
+
+      clearRealtimeRetryTimer();
+
+      const retryCount = Number(state.realtimeRetryCount || 0) + 1;
+      state.realtimeRetryCount = retryCount;
+      const delayMs = Math.min(REALTIME_RETRY_BASE_DELAY_MS * (2 ** (retryCount - 1)), REALTIME_RETRY_MAX_DELAY_MS);
+
+      console.warn('[realtime] scheduling group subscription retry', {
+        groupId,
+        reason,
+        retryCount,
+        delayMs
+      });
+
+      state.realtimeRetryTimer = setTimeout(async () => {
+        state.realtimeRetryTimer = null;
+        try {
+          await subscribeToGroupRealtime(groupId);
+        } catch (error) {
+          console.error('[realtime] retry attempt threw', error);
+          scheduleRealtimeRetry(groupId, 'retry-threw');
+        }
+      }, delayMs);
+    }
+
+    function waitForRealtimeSubscribed(channel, groupId) {
+      return new Promise((resolve) => {
+        let settled = false;
+        const settle = (status) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(waitTimer);
+          resolve(status);
+        };
+
+        const waitTimer = setTimeout(() => settle('APP_MAX_WAIT_EXCEEDED'), REALTIME_SUBSCRIBE_MAX_WAIT_MS);
+
+        channel.subscribe((nextStatus) => {
+          console.log('[realtime] channel status', { groupId, status: nextStatus });
+          if (nextStatus === 'SUBSCRIBED') {
+            settle('SUBSCRIBED');
+            return;
+          }
+          if (nextStatus === 'CHANNEL_ERROR' || nextStatus === 'CLOSED') {
+            settle(nextStatus);
+            return;
+          }
+          if (nextStatus === 'TIMED_OUT') {
+            // Do not settle here. Supabase/Phoenix may still auto-rejoin and later emit SUBSCRIBED.
+            return;
+          }
+        });
+      });
+    }
+
     async function unsubscribeRealtime() {
       const activeChannels = Array.isArray(state.realtimeChannels) ? state.realtimeChannels : [];
+      clearRealtimeRetryTimer();
+      state.realtimeRetryCount = 0;
+      state.realtimePendingGroupId = null;
 
       if (activeChannels.length === 0) {
         state.realtimeChannels = [];
@@ -450,14 +520,29 @@
 
     async function subscribeToGroupRealtime(groupId) {
       if (!groupId) return;
+      if (!state.currentUser?.id || !state.currentMembership || state.currentGroup?.id !== groupId) {
+        console.warn('[realtime] skipped subscribe: prerequisites not ready', {
+          hasUser: !!state.currentUser?.id,
+          hasMembership: !!state.currentMembership,
+          currentGroupId: state.currentGroup?.id,
+          targetGroupId: groupId
+        });
+        return;
+      }
 
       // Avoid duplicate subscriptions when init/group flow runs more than once for the same group.
       if (state.realtimeGroupId === groupId && state.realtimeChannels.length > 0) {
         return;
       }
+      if (state.realtimePendingGroupId === groupId) {
+        return;
+      }
+      state.realtimePendingGroupId = groupId;
+      clearRealtimeRetryTimer();
 
       // Always clear stale channels before creating new group-scoped subscriptions.
       await unsubscribeRealtime();
+      state.realtimePendingGroupId = groupId;
 
       const runRealtimeHandler = async (tableKey, work) => {
         if (state.isHydratingInitialData) {
@@ -558,18 +643,21 @@
           });
         });
 
-      const status = await new Promise(resolve => {
-        channel.subscribe((nextStatus) => resolve(nextStatus));
-      });
+      const status = await waitForRealtimeSubscribed(channel, groupId);
 
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+      if (status !== 'SUBSCRIBED') {
         console.error('subscribeToGroupRealtime failed', status);
         await supabaseClient.removeChannel(channel);
+        state.realtimePendingGroupId = null;
+        scheduleRealtimeRetry(groupId, status);
         return;
       }
 
       state.realtimeChannels = [channel];
       state.realtimeGroupId = groupId;
+      state.realtimePendingGroupId = null;
+      state.realtimeRetryCount = 0;
+      clearRealtimeRetryTimer();
     }
 
 
