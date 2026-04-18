@@ -435,7 +435,7 @@
     const REALTIME_SUBSCRIBE_MAX_WAIT_MS = 15000;
     const REALTIME_RETRY_BASE_DELAY_MS = 1200;
     const REALTIME_RETRY_MAX_DELAY_MS = 10000;
-    const REALTIME_MESSAGES_ONLY_MODE = true;
+    const REALTIME_MESSAGES_ONLY_MODE = false;
 
     function clearRealtimeRetryTimer() {
       if (!state.realtimeRetryTimer) return;
@@ -468,6 +468,14 @@
           scheduleRealtimeRetry(groupId, 'retry-threw');
         }
       }, delayMs);
+    }
+
+    function getPayloadGroupId(payload) {
+      return payload?.new?.group_id || payload?.old?.group_id || null;
+    }
+
+    function getAlertIdFromPayload(payload) {
+      return payload?.new?.alert_id || payload?.old?.alert_id || null;
     }
 
     function waitForRealtimeSubscribed(channel, groupId, attemptId) {
@@ -556,9 +564,21 @@
       const runRealtimeHandler = async (tableKey, work) => {
         if (state.isHydratingInitialData) {
           state.pendingRealtimeTables.add(tableKey);
+          console.log('[realtime] deferred during hydration', {
+            table: tableKey,
+            groupId
+          });
           return;
         }
-        await work();
+        try {
+          await work();
+        } catch (error) {
+          console.error('[realtime] handler failed', {
+            table: tableKey,
+            groupId,
+            error
+          });
+        }
       };
 
       const groupFilter = `group_id=eq.${groupId}`;
@@ -577,7 +597,195 @@
       const channel = supabaseClient
         .channel(channelTopic)
         .on('postgres_changes', messageBinding, async () => {
+          console.log('[realtime] event accepted', { table: 'messages', groupId });
           await runRealtimeHandler('messages', async () => {
+            await loadMessages();
+            renderChatMessages();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: groupFilter }, async (payload) => {
+          const payloadGroupId = getPayloadGroupId(payload);
+          if (payloadGroupId && payloadGroupId !== groupId) {
+            console.log('[realtime] event skipped', {
+              table: 'tasks',
+              reason: 'group-mismatch',
+              payloadGroupId,
+              groupId
+            });
+            return;
+          }
+          console.log('[realtime] event accepted', { table: 'tasks', groupId, eventType: payload?.eventType || null });
+          await runRealtimeHandler('tasks', async () => {
+            await loadTasks();
+            recalculateContributions();
+            renderTasks();
+            renderCompletedTasks();
+            renderNearestDue();
+            renderProgress();
+            renderSnapshots();
+            updateStatusChips();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alerts', filter: groupFilter }, async (payload) => {
+          const payloadGroupId = getPayloadGroupId(payload);
+          if (payloadGroupId && payloadGroupId !== groupId) {
+            console.log('[realtime] event skipped', {
+              table: 'alerts',
+              reason: 'group-mismatch',
+              payloadGroupId,
+              groupId
+            });
+            return;
+          }
+          console.log('[realtime] event accepted', { table: 'alerts', groupId, eventType: payload?.eventType || null });
+          await runRealtimeHandler('alerts', async () => {
+            await loadAlerts();
+            await loadMessages();
+            renderAlerts();
+            renderChatMessages();
+            renderSnapshots();
+            updateStatusChips();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_reads' }, async (payload) => {
+          const alertId = getAlertIdFromPayload(payload);
+          const alertKnownInState = !!state.alerts.find((alert) => String(alert.id) === String(alertId));
+          if (!alertKnownInState && !state.isHydratingInitialData) {
+            console.log('[realtime] event skipped', {
+              table: 'alert_reads',
+              reason: 'unknown-alert-id',
+              alertId,
+              groupId
+            });
+            return;
+          }
+          console.log('[realtime] event accepted', {
+            table: 'alert_reads',
+            groupId,
+            alertId,
+            eventType: payload?.eventType || null
+          });
+          await runRealtimeHandler('alerts', async () => {
+            await loadAlerts();
+            await loadMessages();
+            renderAlerts();
+            renderChatMessages();
+            renderSnapshots();
+            updateStatusChips();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'resources', filter: groupFilter }, async (payload) => {
+          const payloadGroupId = getPayloadGroupId(payload);
+          if (payloadGroupId && payloadGroupId !== groupId) {
+            console.log('[realtime] event skipped', {
+              table: 'resources',
+              reason: 'group-mismatch',
+              payloadGroupId,
+              groupId
+            });
+            return;
+          }
+          console.log('[realtime] event accepted', { table: 'resources', groupId, eventType: payload?.eventType || null });
+          await runRealtimeHandler('resources', async () => {
+            await loadResources();
+            await loadMessages();
+            recalculateContributions();
+            renderResources();
+            populateResourceTypeFilter();
+            renderChatMessages();
+            renderProgress();
+            renderSnapshots();
+            updateStatusChips();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_blocks', filter: groupFilter }, async (payload) => {
+          const payloadGroupId = getPayloadGroupId(payload);
+          if (payloadGroupId && payloadGroupId !== groupId) {
+            console.log('[realtime] event skipped', {
+              table: 'availability_blocks',
+              reason: 'group-mismatch',
+              payloadGroupId,
+              groupId
+            });
+            return;
+          }
+          console.log('[realtime] event accepted', { table: 'availability_blocks', groupId, eventType: payload?.eventType || null });
+          await runRealtimeHandler('availability_blocks', async () => {
+            await loadAvailabilityBlocks();
+            if (state.currentView === 'timetable') {
+              renderSchedule();
+            }
+            syncMeetingRecommendationUI();
+            renderSnapshots();
+            updateStatusChips();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'group_members', filter: groupFilter }, async (payload) => {
+          const payloadGroupId = getPayloadGroupId(payload);
+          if (payloadGroupId && payloadGroupId !== groupId) {
+            console.log('[realtime] event skipped', {
+              table: 'group_members',
+              reason: 'group-mismatch',
+              payloadGroupId,
+              groupId
+            });
+            return;
+          }
+          console.log('[realtime] event accepted', { table: 'group_members', groupId, eventType: payload?.eventType || null });
+          await runRealtimeHandler('group_members', async () => {
+            await loadMembers();
+            await ensureGroupContentKey(state.currentGroup?.id);
+            await Promise.all([
+              loadTasks(),
+              loadAlerts(),
+              loadResources(),
+              loadAvailabilityBlocks()
+            ]);
+            await loadMessages();
+            renderAvatars();
+            populateMemberSelects();
+            refreshAll();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'member_public_keys' }, async (payload) => {
+          const payloadUserId = payload?.new?.user_id || payload?.old?.user_id || null;
+          const isCurrentGroupMember = !!state.memberByDbId.get(payloadUserId);
+          if (!isCurrentGroupMember && !state.isHydratingInitialData) {
+            console.log('[realtime] event skipped', {
+              table: 'member_public_keys',
+              reason: 'non-member-key',
+              payloadUserId,
+              groupId
+            });
+            return;
+          }
+          console.log('[realtime] event accepted', {
+            table: 'member_public_keys',
+            groupId,
+            payloadUserId,
+            eventType: payload?.eventType || null
+          });
+          await runRealtimeHandler('member_public_keys', async () => {
+            await ensureGroupContentKey(state.currentGroup?.id);
+            await loadMessages();
+            renderChatMessages();
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'group_key_envelopes', filter: groupFilter }, async (payload) => {
+          const payloadGroupId = getPayloadGroupId(payload);
+          if (payloadGroupId && payloadGroupId !== groupId) {
+            console.log('[realtime] event skipped', {
+              table: 'group_key_envelopes',
+              reason: 'group-mismatch',
+              payloadGroupId,
+              groupId
+            });
+            return;
+          }
+          console.log('[realtime] event accepted', { table: 'group_key_envelopes', groupId, eventType: payload?.eventType || null });
+          await runRealtimeHandler('group_key_envelopes', async () => {
+            delete state.groupContentKeys[groupId];
+            await ensureGroupContentKey(state.currentGroup?.id);
             await loadMessages();
             renderChatMessages();
           });
@@ -603,11 +811,6 @@
           attemptId,
           currentAttemptId: state.realtimeAttemptSeq
         });
-        await supabaseClient.removeChannel(channel);
-        if (state.realtimePendingGroupId === groupId) {
-          state.realtimePendingGroupId = null;
-        }
-        return;
       }
 
       state.realtimeChannels = [channel];
