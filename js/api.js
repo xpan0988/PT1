@@ -603,6 +603,11 @@
           attemptId,
           currentAttemptId: state.realtimeAttemptSeq
         });
+        await supabaseClient.removeChannel(channel);
+        if (state.realtimePendingGroupId === groupId) {
+          state.realtimePendingGroupId = null;
+        }
+        return;
       }
 
       state.realtimeChannels = [channel];
