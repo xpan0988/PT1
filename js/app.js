@@ -136,6 +136,7 @@
 
       console.time('[startup] total');
       await runStartupPhase('initSupabase', initSupabase);
+      await runStartupPhase('initAuthStateSync', async () => initAuthStateSync());
       state.isAuthBootstrapping = true;
       if (typeof setAuthActionAvailability === 'function') {
         setAuthActionAvailability(false, 'Restoring previous session…');

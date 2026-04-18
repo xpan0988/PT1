@@ -82,6 +82,7 @@
       state.realtimePendingGroupId = null;
       state.realtimeRetryTimer = null;
       state.realtimeRetryCount = 0;
+      state.realtimeAttemptSeq = 0;
       state.pendingRealtimeTables = new Set();
       state.openScheduleSections = {};
       state.currentView = 'dashboard';
@@ -149,6 +150,22 @@
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    let authStateSyncSubscription = null;
+
+    function initAuthStateSync() {
+      if (authStateSyncSubscription) return;
+      const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+          applySession(session, `auth event:${event}`);
+          return;
+        }
+        if (event === 'SIGNED_OUT') {
+          syncRealtimeAuthFromSession(null, `auth event:${event}`);
+        }
+      });
+      authStateSyncSubscription = subscription;
+    }
+
     function getPostAuthFailureMessage(postAuthError, fallback) {
       const phase = postAuthError?.postAuthPhase || 'unknown';
       const phaseMessageByCode = {
@@ -181,9 +198,22 @@
       document.getElementById('appShell').style.display = '';
     }
 
+    function syncRealtimeAuthFromSession(session, sourceLabel = 'session-sync') {
+      const accessToken = session?.access_token || null;
+      const hasAccessToken = !!accessToken;
+      console.log('[realtime-auth] sync', {
+        source: sourceLabel,
+        hasAccessToken
+      });
+
+      if (!supabaseClient?.realtime?.setAuth) return;
+      supabaseClient.realtime.setAuth(accessToken || null);
+    }
+
     function applySession(session, sourceLabel = 'session') {
       state.currentUser = session?.user || null;
       console.log(`[auth] ${sourceLabel}`, state.currentUser?.id || 'none');
+      syncRealtimeAuthFromSession(session, sourceLabel);
     }
 
     async function restoreSession() {
@@ -254,6 +284,7 @@
       if (error) throw error;
 
       state.currentUser = null;
+      syncRealtimeAuthFromSession(null, 'signout');
       await unsubscribeRealtime();
       resetAccountScopedState();
       clearSessionRecovery();
@@ -842,6 +873,7 @@
       state.pendingRealtimeTables = new Set();
       state.realtimePendingGroupId = null;
       state.realtimeRetryCount = 0;
+      state.realtimeAttemptSeq = 0;
       state.hasRenderedSchedule = false;
       state.isHydratingInitialData = false;
       state.groupContentKeys = {};
