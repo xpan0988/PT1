@@ -478,6 +478,162 @@
       return payload?.new?.alert_id || payload?.old?.alert_id || null;
     }
 
+    function getMessagesRealtimeState() {
+      if (!state.messagesRealtime || typeof state.messagesRealtime !== 'object') {
+        state.messagesRealtime = {
+          groupId: null,
+          channel: null,
+          attemptId: 0,
+          status: 'idle'
+        };
+      }
+      return state.messagesRealtime;
+    }
+
+    async function cleanupMessagesRealtime(channel, meta = {}) {
+      if (!channel) return;
+      const messagesRealtime = getMessagesRealtimeState();
+      const isActiveChannel = messagesRealtime.channel === channel;
+      console.log('[realtime] messages cleanup start', {
+        reason: meta.reason || 'unspecified',
+        groupId: meta.groupId || messagesRealtime.groupId || null,
+        attemptId: meta.attemptId || messagesRealtime.attemptId || null,
+        isActiveChannel
+      });
+      try {
+        await supabaseClient.removeChannel(channel);
+      } catch (error) {
+        console.warn('[realtime] messages cleanup removeChannel failed', {
+          reason: meta.reason || 'unspecified',
+          groupId: meta.groupId || messagesRealtime.groupId || null,
+          attemptId: meta.attemptId || messagesRealtime.attemptId || null,
+          error
+        });
+      }
+      if (isActiveChannel) {
+        messagesRealtime.groupId = null;
+        messagesRealtime.channel = null;
+        messagesRealtime.attemptId = 0;
+        messagesRealtime.status = 'idle';
+      }
+      console.log('[realtime] messages cleanup done', {
+        reason: meta.reason || 'unspecified',
+        groupId: meta.groupId || messagesRealtime.groupId || null,
+        attemptId: meta.attemptId || messagesRealtime.attemptId || null,
+        clearedActive: isActiveChannel
+      });
+    }
+
+    async function handleMessagesRealtimePayload(payload, context) {
+      const messagesRealtime = getMessagesRealtimeState();
+      const payloadGroupId = getPayloadGroupId(payload);
+      const currentGroupId = state.currentGroup?.id || null;
+      const senderId = payload?.new?.sender_user_id || payload?.old?.sender_user_id || null;
+      const eventType = payload?.eventType || null;
+      const isStaleAttempt = state.realtimeAttemptSeq !== context.attemptId;
+      const isActiveSubscription = messagesRealtime.channel === context.channel
+        && messagesRealtime.attemptId === context.attemptId
+        && messagesRealtime.groupId === context.groupId;
+
+      console.log('[realtime] messages payload received', {
+        eventType,
+        payloadGroupId,
+        currentGroupId,
+        senderId,
+        attemptId: context.attemptId,
+        activeAttemptId: messagesRealtime.attemptId || null,
+        isActiveSubscription,
+        isStaleAttempt
+      });
+
+      if (!payloadGroupId) {
+        console.log('[realtime] messages callback skipped', { reason: 'missing-payload-group-id', eventType, attemptId: context.attemptId });
+        return;
+      }
+      if (!state.currentGroup?.id) {
+        console.log('[realtime] messages callback skipped', { reason: 'no-current-group', payloadGroupId, attemptId: context.attemptId });
+        return;
+      }
+      if (isStaleAttempt) {
+        console.log('[realtime] messages callback skipped', {
+          reason: 'stale-attempt',
+          payloadGroupId,
+          attemptId: context.attemptId,
+          currentAttemptId: state.realtimeAttemptSeq || null
+        });
+        return;
+      }
+      if (!isActiveSubscription) {
+        console.log('[realtime] messages callback skipped', {
+          reason: 'inactive-subscription',
+          payloadGroupId,
+          attemptId: context.attemptId,
+          activeAttemptId: messagesRealtime.attemptId || null
+        });
+        return;
+      }
+      if (payloadGroupId !== state.currentGroup.id) {
+        console.log('[realtime] messages callback skipped', {
+          reason: 'payload-group-mismatch',
+          payloadGroupId,
+          currentGroupId: state.currentGroup.id,
+          attemptId: context.attemptId
+        });
+        return;
+      }
+      if (state.isHydratingInitialData) {
+        state.pendingRealtimeTables.add('messages');
+        console.log('[realtime] messages callback skipped', {
+          reason: 'hydration-in-progress',
+          payloadGroupId,
+          currentGroupId: state.currentGroup.id,
+          attemptId: context.attemptId
+        });
+        return;
+      }
+
+      console.log('[realtime] loadMessages start from realtime', {
+        eventType,
+        groupId: state.currentGroup.id,
+        attemptId: context.attemptId
+      });
+      await loadMessages();
+      console.log('[realtime] loadMessages done from realtime', {
+        messageCount: state.messages.length,
+        groupId: state.currentGroup.id,
+        attemptId: context.attemptId
+      });
+
+      console.log('[realtime] renderChatMessages start', {
+        messageCount: state.messages.length,
+        source: 'realtime',
+        attemptId: context.attemptId
+      });
+      renderChatMessages();
+      console.log('[realtime] renderChatMessages done', {
+        messageCount: state.messages.length,
+        source: 'realtime',
+        attemptId: context.attemptId
+      });
+    }
+
+    function attachMessagesRealtimeBinding(channel, context) {
+      const messageBinding = { event: '*', schema: 'public', table: 'messages' };
+      console.log('[realtime] attaching messages binding', {
+        topic: context.channelTopic,
+        schema: messageBinding.schema,
+        table: messageBinding.table,
+        event: messageBinding.event,
+        filter: null,
+        groupId: context.groupId,
+        attemptId: context.attemptId
+      });
+
+      return channel.on('postgres_changes', messageBinding, async (payload) => {
+        await handleMessagesRealtimePayload(payload, context);
+      });
+    }
+
     function waitForRealtimeSubscribed(channel, groupId, attemptId) {
       return new Promise((resolve) => {
         let settled = false;
@@ -494,12 +650,18 @@
         channel.subscribe((nextStatus) => {
           latestStatus = nextStatus;
           const isLatestAttempt = state.realtimeAttemptSeq === attemptId;
+          const messagesRealtime = getMessagesRealtimeState();
+          const becameActive = nextStatus === 'SUBSCRIBED'
+            && isLatestAttempt
+            && messagesRealtime.channel === channel
+            && messagesRealtime.attemptId === attemptId;
           console.log('[realtime] channel status', {
             groupId,
             attemptId,
             status: nextStatus,
             isLatestAttempt,
-            retryCount: state.realtimeRetryCount
+            retryCount: state.realtimeRetryCount,
+            becameActive
           });
           if (nextStatus === 'SUBSCRIBED') {
             settle('SUBSCRIBED');
@@ -516,6 +678,7 @@
 
     async function unsubscribeRealtime() {
       const activeChannels = Array.isArray(state.realtimeChannels) ? state.realtimeChannels : [];
+      const messagesRealtime = getMessagesRealtimeState();
       clearRealtimeRetryTimer();
       state.realtimeRetryCount = 0;
       state.realtimePendingGroupId = null;
@@ -531,6 +694,10 @@
 
       state.realtimeChannels = [];
       state.realtimeGroupId = null;
+      messagesRealtime.groupId = null;
+      messagesRealtime.channel = null;
+      messagesRealtime.attemptId = 0;
+      messagesRealtime.status = 'idle';
     }
 
 
@@ -588,136 +755,28 @@
         }
       };
 
-      const handleMessagesRealtimePayload = async (payload) => {
-        const payloadGroupId = getPayloadGroupId(payload);
-        const currentGroupId = state.currentGroup?.id || null;
-        const membershipGroupId = state.currentMembership?.group_id || null;
-        const currentUserId = state.currentUser?.id || null;
-        const isStaleAttempt = state.realtimeAttemptSeq !== attemptId;
-
-        console.log('[realtime] messages payload received', {
-          eventType: payload?.eventType || null,
-          payloadGroupId,
-          currentGroupId,
-          currentUserId,
-          membershipGroupId,
-          attemptId,
-          currentAttemptId: state.realtimeAttemptSeq || null,
-          isStaleAttempt
-        });
-
-        if (!state.currentGroup) {
-          console.log('[realtime] messages callback skipped', {
-            reason: 'missing-current-group',
-            payloadGroupId,
-            currentGroupId,
-            attemptId
-          });
-          return;
-        }
-
-        if (!state.currentMembership) {
-          console.log('[realtime] messages callback skipped', {
-            reason: 'missing-membership',
-            payloadGroupId,
-            membershipGroupId,
-            attemptId
-          });
-          return;
-        }
-
-        if (state.currentGroup.id !== groupId) {
-          console.log('[realtime] messages callback skipped', {
-            reason: 'subscription-group-mismatch',
-            payloadGroupId,
-            callbackGroupId: groupId,
-            currentGroupId: state.currentGroup.id,
-            attemptId
-          });
-          return;
-        }
-
-        if (payloadGroupId && payloadGroupId !== state.currentGroup.id) {
-          console.log('[realtime] messages callback skipped', {
-            reason: 'payload-group-mismatch',
-            payloadGroupId,
-            currentGroupId: state.currentGroup.id,
-            attemptId
-          });
-          return;
-        }
-
-        if (isStaleAttempt) {
-          console.log('[realtime] messages callback skipped', {
-            reason: 'stale-attempt',
-            attemptId,
-            currentAttemptId: state.realtimeAttemptSeq || null
-          });
-          return;
-        }
-
-        if (state.isHydratingInitialData) {
-          state.pendingRealtimeTables.add('messages');
-          console.log('[realtime] messages callback skipped', {
-            reason: 'hydration-in-progress',
-            payloadGroupId,
-            currentGroupId: state.currentGroup.id,
-            attemptId
-          });
-          return;
-        }
-
-        console.log('[realtime] loadMessages start from realtime', {
-          eventType: payload?.eventType || null,
-          groupId: state.currentGroup.id,
-          attemptId
-        });
-        await loadMessages();
-        console.log('[realtime] loadMessages done from realtime', {
-          messageCount: state.messages.length,
-          groupId: state.currentGroup.id,
-          attemptId
-        });
-
-        console.log('[realtime] renderChatMessages start', {
-          messageCount: state.messages.length,
-          source: 'realtime',
-          attemptId
-        });
-        renderChatMessages();
-        console.log('[realtime] renderChatMessages done', {
-          messageCount: state.messages.length,
-          source: 'realtime',
-          attemptId
-        });
-      };
-
       const groupFilter = `group_id=eq.${groupId}`;
       const channelTopic = `group-realtime:${groupId}`;
-      const messageBinding = { event: '*', schema: 'public', table: 'messages' };
+      const messagesRealtime = getMessagesRealtimeState();
+      const subscriptionContext = {
+        attemptId,
+        groupId,
+        channelTopic,
+        channel: null
+      };
       console.log('[realtime] subscribe attempt start', {
         attemptId,
+        groupId,
         userId: state.currentUser?.id || null,
         membershipGroupId: state.currentMembership?.group_id || null,
         currentGroupId: state.currentGroup?.id || null,
         hasAccessToken: !!sessionAccessToken,
         channelTopic,
-        messagesOnlyMode: REALTIME_MESSAGES_ONLY_MODE,
-        bindings: [messageBinding]
+        messagesOnlyMode: REALTIME_MESSAGES_ONLY_MODE
       });
-      console.log('[realtime] attaching messages binding', {
-        topic: channelTopic,
-        schema: messageBinding.schema || null,
-        table: messageBinding.table || null,
-        event: messageBinding.event || null,
-        filter: messageBinding.filter || null,
-        callbackAttached: true
-      });
-      const channel = supabaseClient
-        .channel(channelTopic)
-        .on('postgres_changes', messageBinding, async (payload) => {
-          await handleMessagesRealtimePayload(payload);
-        })
+      let channel = supabaseClient.channel(channelTopic);
+      subscriptionContext.channel = channel;
+      channel = attachMessagesRealtimeBinding(channel, subscriptionContext)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: groupFilter }, async (payload) => {
           const payloadGroupId = getPayloadGroupId(payload);
           if (payloadGroupId && payloadGroupId !== groupId) {
@@ -906,16 +965,22 @@
           });
         });
 
+      messagesRealtime.status = 'subscribing';
       const { status, latestStatus } = await waitForRealtimeSubscribed(channel, groupId, attemptId);
       const isLatestAttempt = state.realtimeAttemptSeq === attemptId;
+      const becameActive = status === 'SUBSCRIBED' && isLatestAttempt;
+      messagesRealtime.status = status;
 
       if (status !== 'SUBSCRIBED' && !(!isLatestAttempt && latestStatus === 'SUBSCRIBED')) {
         console.error('subscribeToGroupRealtime failed', status, {
           attemptId,
+          groupId,
           latestStatus,
-          isLatestAttempt
+          isLatestAttempt,
+          retryCount: state.realtimeRetryCount,
+          becameActive
         });
-        await supabaseClient.removeChannel(channel);
+        await cleanupMessagesRealtime(channel, { reason: `subscribe-failed:${status}`, groupId, attemptId });
         state.realtimePendingGroupId = null;
         scheduleRealtimeRetry(groupId, status);
         return;
@@ -924,15 +989,55 @@
       if (!isLatestAttempt) {
         console.warn('[realtime] late success ignored because a newer attempt exists', {
           attemptId,
+          groupId,
           currentAttemptId: state.realtimeAttemptSeq
         });
+        await cleanupMessagesRealtime(channel, { reason: 'late-success-stale-attempt', groupId, attemptId });
+        return;
       }
 
+      const previousChannel = messagesRealtime.channel;
+      if (previousChannel && previousChannel !== channel) {
+        await cleanupMessagesRealtime(previousChannel, { reason: 'replace-active-channel', groupId, attemptId });
+      }
+      messagesRealtime.groupId = groupId;
+      messagesRealtime.channel = channel;
+      messagesRealtime.attemptId = attemptId;
+      messagesRealtime.status = 'SUBSCRIBED';
       state.realtimeChannels = [channel];
       state.realtimeGroupId = groupId;
       state.realtimePendingGroupId = null;
       state.realtimeRetryCount = 0;
       clearRealtimeRetryTimer();
+
+      console.log('[realtime] channel status', {
+        groupId,
+        attemptId,
+        status: 'SUBSCRIBED',
+        retryCount: state.realtimeRetryCount,
+        isLatestAttempt,
+        becameActive: true
+      });
+
+      if (state.currentGroup?.id === groupId) {
+        if (state.isHydratingInitialData) {
+          state.pendingRealtimeTables.add('messages');
+          console.log('[realtime] messages callback skipped', {
+            reason: 'hydration-in-progress',
+            source: 'subscribe-reconcile',
+            groupId,
+            attemptId
+          });
+        } else {
+          console.log('[realtime] loadMessages start from subscribe reconcile', { groupId, attemptId });
+          await loadMessages();
+          console.log('[realtime] loadMessages done from subscribe reconcile', {
+            groupId,
+            attemptId,
+            messageCount: state.messages.length
+          });
+        }
+      }
     }
 
 
