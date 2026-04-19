@@ -9,8 +9,9 @@
       const sender = state.members[senderId];
       if (!sender) return;
 
+      let insertedMessage;
       try {
-        const insertedMessage = await createEncryptedChatMessage(state.currentGroup.id, sender.dbId, text);
+        insertedMessage = await createEncryptedChatMessage(state.currentGroup.id, sender.dbId, text);
       } catch (error) {
         console.error('sendMessage failed', error);
         const errorMessage = String(error?.message || '');
