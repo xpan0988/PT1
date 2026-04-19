@@ -493,7 +493,14 @@
 
         channel.subscribe((nextStatus) => {
           latestStatus = nextStatus;
-          console.log('[realtime] channel status', { groupId, attemptId, status: nextStatus, retryCount: state.realtimeRetryCount });
+          const isLatestAttempt = state.realtimeAttemptSeq === attemptId;
+          console.log('[realtime] channel status', {
+            groupId,
+            attemptId,
+            status: nextStatus,
+            isLatestAttempt,
+            retryCount: state.realtimeRetryCount
+          });
           if (nextStatus === 'SUBSCRIBED') {
             settle('SUBSCRIBED');
             return;
@@ -672,20 +679,22 @@
           attemptId
         });
 
-        console.log('[realtime] renderChatMessages start from realtime', {
+        console.log('[realtime] renderChatMessages start', {
           messageCount: state.messages.length,
+          source: 'realtime',
           attemptId
         });
         renderChatMessages();
-        console.log('[realtime] renderChatMessages done from realtime', {
+        console.log('[realtime] renderChatMessages done', {
           messageCount: state.messages.length,
+          source: 'realtime',
           attemptId
         });
       };
 
       const groupFilter = `group_id=eq.${groupId}`;
       const channelTopic = `group-realtime:${groupId}`;
-      const messageBinding = { event: '*', schema: 'public', table: 'messages', filter: groupFilter };
+      const messageBinding = { event: '*', schema: 'public', table: 'messages' };
       console.log('[realtime] subscribe attempt start', {
         attemptId,
         userId: state.currentUser?.id || null,
@@ -695,6 +704,14 @@
         channelTopic,
         messagesOnlyMode: REALTIME_MESSAGES_ONLY_MODE,
         bindings: [messageBinding]
+      });
+      console.log('[realtime] attaching messages binding', {
+        topic: channelTopic,
+        schema: messageBinding.schema || null,
+        table: messageBinding.table || null,
+        event: messageBinding.event || null,
+        filter: messageBinding.filter || null,
+        callbackAttached: true
       });
       const channel = supabaseClient
         .channel(channelTopic)
