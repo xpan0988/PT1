@@ -581,6 +581,108 @@
         }
       };
 
+      const handleMessagesRealtimePayload = async (payload) => {
+        const payloadGroupId = getPayloadGroupId(payload);
+        const currentGroupId = state.currentGroup?.id || null;
+        const membershipGroupId = state.currentMembership?.group_id || null;
+        const currentUserId = state.currentUser?.id || null;
+        const isStaleAttempt = state.realtimeAttemptSeq !== attemptId;
+
+        console.log('[realtime] messages payload received', {
+          eventType: payload?.eventType || null,
+          payloadGroupId,
+          currentGroupId,
+          currentUserId,
+          membershipGroupId,
+          attemptId,
+          currentAttemptId: state.realtimeAttemptSeq || null,
+          isStaleAttempt
+        });
+
+        if (!state.currentGroup) {
+          console.log('[realtime] messages callback skipped', {
+            reason: 'missing-current-group',
+            payloadGroupId,
+            currentGroupId,
+            attemptId
+          });
+          return;
+        }
+
+        if (!state.currentMembership) {
+          console.log('[realtime] messages callback skipped', {
+            reason: 'missing-membership',
+            payloadGroupId,
+            membershipGroupId,
+            attemptId
+          });
+          return;
+        }
+
+        if (state.currentGroup.id !== groupId) {
+          console.log('[realtime] messages callback skipped', {
+            reason: 'subscription-group-mismatch',
+            payloadGroupId,
+            callbackGroupId: groupId,
+            currentGroupId: state.currentGroup.id,
+            attemptId
+          });
+          return;
+        }
+
+        if (payloadGroupId && payloadGroupId !== state.currentGroup.id) {
+          console.log('[realtime] messages callback skipped', {
+            reason: 'payload-group-mismatch',
+            payloadGroupId,
+            currentGroupId: state.currentGroup.id,
+            attemptId
+          });
+          return;
+        }
+
+        if (isStaleAttempt) {
+          console.log('[realtime] messages callback skipped', {
+            reason: 'stale-attempt',
+            attemptId,
+            currentAttemptId: state.realtimeAttemptSeq || null
+          });
+          return;
+        }
+
+        if (state.isHydratingInitialData) {
+          state.pendingRealtimeTables.add('messages');
+          console.log('[realtime] messages callback skipped', {
+            reason: 'hydration-in-progress',
+            payloadGroupId,
+            currentGroupId: state.currentGroup.id,
+            attemptId
+          });
+          return;
+        }
+
+        console.log('[realtime] loadMessages start from realtime', {
+          eventType: payload?.eventType || null,
+          groupId: state.currentGroup.id,
+          attemptId
+        });
+        await loadMessages();
+        console.log('[realtime] loadMessages done from realtime', {
+          messageCount: state.messages.length,
+          groupId: state.currentGroup.id,
+          attemptId
+        });
+
+        console.log('[realtime] renderChatMessages start from realtime', {
+          messageCount: state.messages.length,
+          attemptId
+        });
+        renderChatMessages();
+        console.log('[realtime] renderChatMessages done from realtime', {
+          messageCount: state.messages.length,
+          attemptId
+        });
+      };
+
       const groupFilter = `group_id=eq.${groupId}`;
       const channelTopic = `group-realtime:${groupId}`;
       const messageBinding = { event: '*', schema: 'public', table: 'messages', filter: groupFilter };
@@ -596,12 +698,8 @@
       });
       const channel = supabaseClient
         .channel(channelTopic)
-        .on('postgres_changes', messageBinding, async () => {
-          console.log('[realtime] event accepted', { table: 'messages', groupId });
-          await runRealtimeHandler('messages', async () => {
-            await loadMessages();
-            renderChatMessages();
-          });
+        .on('postgres_changes', messageBinding, async (payload) => {
+          await handleMessagesRealtimePayload(payload);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: groupFilter }, async (payload) => {
           const payloadGroupId = getPayloadGroupId(payload);
