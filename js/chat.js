@@ -10,7 +10,7 @@
       if (!sender) return;
 
       try {
-        await createEncryptedChatMessage(state.currentGroup.id, sender.dbId, text);
+        const insertedMessage = await createEncryptedChatMessage(state.currentGroup.id, sender.dbId, text);
       } catch (error) {
         console.error('sendMessage failed', error);
         const errorMessage = String(error?.message || '');
@@ -23,8 +23,18 @@
       }
 
       input.value = '';
-      await loadMessages();
+      state.messages.push({
+        id: insertedMessage.id,
+        type: insertedMessage.type || 'text',
+        senderId,
+        text,
+        time: formatTime(new Date(insertedMessage.created_at || Date.now())),
+        createdAt: insertedMessage.created_at || new Date().toISOString(),
+        alertId: null
+      });
+      state.messages.sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
       renderChatMessages();
+      await refreshMessages({ source: 'post-action:send-message' });
       showToast(`${sender.name} sent a message`, 'chat');
     }
 

@@ -18,30 +18,15 @@ const state = {
       alerts: [],
       editingTaskId: null,
       contributions: [],
-      realtimeChannels: [],
-      realtimeGroupId: null,
-      realtimePendingGroupId: null,
-      realtimeRetryTimer: null,
-      realtimeRetryCount: 0,
-      realtimeAttemptSeq: 0,
-      messagesRealtime: {
-        groupId: null,
-        channel: null,
-        attemptId: 0,
-        status: 'idle',
-        deferredReconcilePending: false
-      },
-      rawMessagesDebugRealtime: {
-        groupId: null,
-        channel: null,
-        topic: null,
-        status: 'idle'
-      },
       memberIndexByDbId: new Map(),
       memberByDbId: new Map(),
       isHydratingInitialData: false,
-      pendingRealtimeTables: new Set(),
       hasRenderedSchedule: false,
+      groupPolling: {
+        activeGroupId: null,
+        timers: {},
+        inFlight: {}
+      },
       // MVP E2EE caches
       groupContentKeys: {},
       groupEnvelopeBackfillInFlight: {},

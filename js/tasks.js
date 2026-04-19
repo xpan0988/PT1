@@ -95,8 +95,7 @@
         }
 
         resetTaskForm();
-        await loadTasks();
-        refreshAll();
+        await refreshTasks({ source: 'post-action:update-task' });
         showToast(`Task updated for ${state.members[assigneeId]?.name || 'A member'}`, 'task');
         return;
       }
@@ -120,8 +119,7 @@
       }
 
       resetTaskForm();
-      await loadTasks();
-      refreshAll();
+      await refreshTasks({ source: 'post-action:add-task' });
       showToast(`Task added for ${assignee.name}`, 'task');
     }
 
@@ -150,8 +148,7 @@
         return;
       }
 
-      await loadTasks();
-      refreshAll();
+      await refreshTasks({ source: 'post-action:complete-task' });
       showToast(`${state.members[task.assigneeId]?.name || 'A member'} completed a task`, 'task');
     }
 

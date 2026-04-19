@@ -92,12 +92,6 @@
       state.isHydratingInitialData = true;
       try {
         try {
-          await runStartupPhase('subscription setup', ensureGroupRealtimeSubscription);
-        } catch (error) {
-          console.error('[post-auth:realtime] ensureGroupRealtimeSubscription failed', error);
-          throw buildPostAuthPhaseError('realtime', 'Signed in, but failed to subscribe to group updates.', error);
-        }
-        try {
           await runStartupPhase('group hydration', hydrateCurrentGroupData);
         } catch (error) {
           console.error('[post-auth:hydration] hydrateCurrentGroupData failed', error);
@@ -116,16 +110,11 @@
       }
 
       try {
-        await flushDeferredMessagesRealtimeReconcile();
+        await runStartupPhase('startGroupPolling', () => startGroupPolling(state.currentGroup?.id));
       } catch (error) {
-        console.error('[post-auth:deferred-reconcile] flushDeferredMessagesRealtimeReconcile failed', error);
+        console.error('[post-auth:polling] startGroupPolling failed', error);
       }
 
-      try {
-        await flushPendingRealtimeTables();
-      } catch (error) {
-        console.error('[post-auth:realtime-flush] flushPendingRealtimeTables failed', error);
-      }
     }
 
     window.handlePostAuthSuccess = handlePostAuthSuccess;
@@ -178,11 +167,6 @@
     }
 
 
-
-    async function ensureGroupRealtimeSubscription() {
-      if (!state.currentGroup?.id || !state.currentMembership) return;
-      await subscribeToGroupRealtime(state.currentGroup.id);
-    }
 
     // =========================
     // Auth / profile / group flow
@@ -271,8 +255,7 @@
         resetTaskForm();
       }
 
-      await loadTasks();
-      refreshAll();
+      await refreshTasks({ source: 'post-action:delete-task' });
       showToast(`Task deleted: ${task.title}`, 'task');
     }
 
