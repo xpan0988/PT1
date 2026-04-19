@@ -38,8 +38,7 @@
       }
 
       input.value = '';
-      await loadAlerts();
-      await loadMessages();
+      await refreshAlerts({ source: 'post-action:create-alert' });
       closeComposerPanels();
       switchView('dashboard');
       refreshAlertSurfaces();
@@ -92,8 +91,7 @@
         return;
       }
 
-      await loadAlerts();
-      await loadMessages();
+      await refreshAlerts({ source: 'post-action:ack-alert' });
       refreshAlertSurfaces();
       showToast(`${member.name} acknowledged an alert`, 'alert');
     }

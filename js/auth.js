@@ -77,19 +77,11 @@
       state.editingTaskId = null;
       state.memberIndexByDbId = new Map();
       state.memberByDbId = new Map();
-      state.realtimeChannels = [];
-      state.realtimeGroupId = null;
-      state.realtimePendingGroupId = null;
-      state.realtimeRetryTimer = null;
-      state.realtimeRetryCount = 0;
-      state.realtimeAttemptSeq = 0;
-      state.messagesRealtime = {
-        groupId: null,
-        channel: null,
-        attemptId: 0,
-        status: 'idle'
+      state.groupPolling = {
+        activeGroupId: null,
+        timers: {},
+        inFlight: {}
       };
-      state.pendingRealtimeTables = new Set();
       state.openScheduleSections = {};
       state.currentView = 'dashboard';
       state.hasRenderedSchedule = false;
@@ -166,7 +158,8 @@
           return;
         }
         if (event === 'SIGNED_OUT') {
-          syncRealtimeAuthFromSession(null, `auth event:${event}`);
+          stopGroupPolling(`auth event:${event}`);
+          state.currentUser = null;
         }
       });
       authStateSyncSubscription = subscription;
@@ -177,7 +170,6 @@
       const phaseMessageByCode = {
         profile: 'Signed in, but profile initialization failed.',
         membership: 'Signed in, but membership/onboarding initialization failed.',
-        realtime: 'Signed in, but realtime subscription initialization failed.',
         hydration: 'Signed in, but group data hydration failed.',
         render: 'Signed in, but rendering failed.'
       };
@@ -204,22 +196,10 @@
       document.getElementById('appShell').style.display = '';
     }
 
-    function syncRealtimeAuthFromSession(session, sourceLabel = 'session-sync') {
-      const accessToken = session?.access_token || null;
-      const hasAccessToken = !!accessToken;
-      console.log('[realtime-auth] sync', {
-        source: sourceLabel,
-        hasAccessToken
-      });
-
-      if (!supabaseClient?.realtime?.setAuth) return;
-      supabaseClient.realtime.setAuth(accessToken || null);
-    }
 
     function applySession(session, sourceLabel = 'session') {
       state.currentUser = session?.user || null;
       console.log(`[auth] ${sourceLabel}`, state.currentUser?.id || 'none');
-      syncRealtimeAuthFromSession(session, sourceLabel);
     }
 
     async function restoreSession() {
@@ -290,8 +270,7 @@
       if (error) throw error;
 
       state.currentUser = null;
-      syncRealtimeAuthFromSession(null, 'signout');
-      await unsubscribeRealtime();
+      await stopGroupPolling('signout');
       resetAccountScopedState();
       clearSessionRecovery();
 
@@ -586,7 +565,7 @@
         return true;
       }
 
-      await unsubscribeRealtime();
+      await stopGroupPolling('membership-unavailable');
       state.hasResolvedMembership = true;
       openGroupModal();
       return false;
@@ -736,7 +715,7 @@
       updateHeaderGroupTag();
       document.getElementById('groupModal').classList.remove('open');
       await hydrateCurrentGroupData();
-      await ensureGroupRealtimeSubscription();
+      await startGroupPolling(state.currentGroup?.id);
       renderAvatars();
       populateMemberSelects();
       refreshAll();
@@ -851,7 +830,7 @@
       updateHeaderGroupTag();
       document.getElementById('groupModal').classList.remove('open');
       await hydrateCurrentGroupData();
-      await ensureGroupRealtimeSubscription();
+      await startGroupPolling(state.currentGroup?.id);
       renderAvatars();
       populateMemberSelects();
       refreshAll();
@@ -860,8 +839,8 @@
 
 
     async function restartGroupFlow() {
-      // Group flow reset must clear realtime channels to prevent stale callbacks.
-      await unsubscribeRealtime();
+      // Group flow reset must clear polling timers to prevent stale callbacks.
+      await stopGroupPolling('restart-group-flow');
 
       state.currentGroup = null;
       state.currentMembership = null;
@@ -876,15 +855,10 @@
       state.editingTaskId = null;
       state.memberIndexByDbId = new Map();
       state.memberByDbId = new Map();
-      state.pendingRealtimeTables = new Set();
-      state.realtimePendingGroupId = null;
-      state.realtimeRetryCount = 0;
-      state.realtimeAttemptSeq = 0;
-      state.messagesRealtime = {
-        groupId: null,
-        channel: null,
-        attemptId: 0,
-        status: 'idle'
+      state.groupPolling = {
+        activeGroupId: null,
+        timers: {},
+        inFlight: {}
       };
       state.hasRenderedSchedule = false;
       state.isHydratingInitialData = false;

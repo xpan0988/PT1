@@ -39,10 +39,7 @@
         }
       }
 
-      await loadAvailabilityBlocks();
-      renderSchedule();
-      syncMeetingRecommendationUI();
-      renderSnapshots();
+      await refreshAvailability({ source: 'post-action:update-availability' });
       showToast('Availability updated', 'task');
     }
 

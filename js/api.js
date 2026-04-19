@@ -432,755 +432,230 @@
     }
 
 
-    const REALTIME_SUBSCRIBE_MAX_WAIT_MS = 15000;
-    const REALTIME_RETRY_BASE_DELAY_MS = 1200;
-    const REALTIME_RETRY_MAX_DELAY_MS = 10000;
-    const REALTIME_MESSAGES_ONLY_MODE = false;
+    const POLLING_INTERVALS_MS = {
+      messages: 2000,
+      alerts: 4000,
+      tasks: 4000,
+      availability: 4000,
+      resources: 5000,
+      members: 5000,
+      e2ee: 5000
+    };
 
-    function clearRealtimeRetryTimer() {
-      if (!state.realtimeRetryTimer) return;
-      clearTimeout(state.realtimeRetryTimer);
-      state.realtimeRetryTimer = null;
-    }
-
-    function scheduleRealtimeRetry(groupId, reason = 'unknown') {
-      if (!groupId || state.currentGroup?.id !== groupId || !state.currentMembership) return;
-
-      clearRealtimeRetryTimer();
-
-      const retryCount = Number(state.realtimeRetryCount || 0) + 1;
-      state.realtimeRetryCount = retryCount;
-      const delayMs = Math.min(REALTIME_RETRY_BASE_DELAY_MS * (2 ** (retryCount - 1)), REALTIME_RETRY_MAX_DELAY_MS);
-
-      console.warn('[realtime] scheduling group subscription retry', {
-        groupId,
-        reason,
-        retryCount,
-        delayMs
-      });
-
-      state.realtimeRetryTimer = setTimeout(async () => {
-        state.realtimeRetryTimer = null;
-        try {
-          await subscribeToGroupRealtime(groupId);
-        } catch (error) {
-          console.error('[realtime] retry attempt threw', error);
-          scheduleRealtimeRetry(groupId, 'retry-threw');
-        }
-      }, delayMs);
-    }
-
-    function getPayloadGroupId(payload) {
-      return payload?.new?.group_id || payload?.old?.group_id || null;
-    }
-
-    function getAlertIdFromPayload(payload) {
-      return payload?.new?.alert_id || payload?.old?.alert_id || null;
-    }
-
-    function getMessagesRealtimeState() {
-      if (!state.messagesRealtime || typeof state.messagesRealtime !== 'object') {
-        state.messagesRealtime = {
-          groupId: null,
-          channel: null,
-          attemptId: 0,
-          status: 'idle',
-          deferredReconcilePending: false
+    function getPollingState() {
+      if (!state.groupPolling || typeof state.groupPolling !== 'object') {
+        state.groupPolling = {
+          activeGroupId: null,
+          timers: {},
+          inFlight: {}
         };
       }
-      return state.messagesRealtime;
-    }
-
-    function getRawMessagesDebugRealtimeState() {
-      if (!state.rawMessagesDebugRealtime || typeof state.rawMessagesDebugRealtime !== 'object') {
-        state.rawMessagesDebugRealtime = {
-          groupId: null,
-          channel: null,
-          topic: null,
-          status: 'idle'
-        };
+      if (!state.groupPolling.timers || typeof state.groupPolling.timers !== 'object') {
+        state.groupPolling.timers = {};
       }
-      return state.rawMessagesDebugRealtime;
-    }
-
-    async function ensureRawMessagesDebugSubscription(groupId) {
-      if (!groupId) return;
-      const debugState = getRawMessagesDebugRealtimeState();
-      if (debugState.groupId === groupId && debugState.channel) return;
-
-      if (debugState.channel && debugState.groupId !== groupId) {
-        try {
-          await supabaseClient.removeChannel(debugState.channel);
-        } catch (error) {
-          console.warn('[rt-debug] raw messages cleanup removeChannel failed', {
-            groupId: debugState.groupId || null,
-            topic: debugState.topic || null,
-            error
-          });
-        }
+      if (!state.groupPolling.inFlight || typeof state.groupPolling.inFlight !== 'object') {
+        state.groupPolling.inFlight = {};
       }
-
-      const debugTopic = `rt-debug:raw-messages:${groupId}`;
-      let debugChannel = supabaseClient.channel(debugTopic);
-      debugChannel = debugChannel.on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
-        console.log('[rt-debug] raw messages payload', {
-          eventType: payload?.eventType || null,
-          newGroupId: payload?.new?.group_id || null,
-          oldGroupId: payload?.old?.group_id || null,
-          senderUserId: payload?.new?.sender_user_id || payload?.old?.sender_user_id || null,
-          messageId: payload?.new?.id || payload?.old?.id || null
-        });
-      });
-
-      debugChannel.subscribe((nextStatus) => {
-        const topic = debugChannel?.topic || debugTopic;
-        debugState.status = nextStatus;
-        console.log('[rt-debug] raw messages channel status', {
-          status: nextStatus,
-          topic
-        });
-      });
-
-      debugState.groupId = groupId;
-      debugState.channel = debugChannel;
-      debugState.topic = debugTopic;
-      debugState.status = 'subscribing';
-      window.__rtDebugMessagesChannel = debugChannel;
-      window.__rtDebugMessagesChannelTopic = debugTopic;
+      return state.groupPolling;
     }
 
-    async function flushDeferredMessagesRealtimeReconcile() {
-      const messagesRealtime = getMessagesRealtimeState();
-      if (!messagesRealtime.deferredReconcilePending) return;
-      if (!state.currentGroup?.id) {
-        messagesRealtime.deferredReconcilePending = false;
+    function isPollingContextActive(groupId) {
+      if (!groupId) return false;
+      return !!state.currentUser?.id
+        && !!state.currentMembership
+        && state.currentGroup?.id === groupId;
+    }
+
+    function clearPollingTimer(timerKey) {
+      const polling = getPollingState();
+      const timer = polling.timers[timerKey];
+      if (!timer) return;
+      clearInterval(timer);
+      delete polling.timers[timerKey];
+      delete polling.inFlight[timerKey];
+    }
+
+    async function stopGroupPolling(reason = 'manual-stop') {
+      const polling = getPollingState();
+      Object.keys(polling.timers).forEach(clearPollingTimer);
+      polling.activeGroupId = null;
+      console.log('[polling] stopped', { reason });
+    }
+
+    async function runPollingRefresh(timerKey, groupId, work, sourceLabel) {
+      const polling = getPollingState();
+      if (!isPollingContextActive(groupId) || polling.activeGroupId !== groupId) {
+        return;
+      }
+      if (polling.inFlight[timerKey]) {
         return;
       }
 
-      messagesRealtime.deferredReconcilePending = false;
-      console.log('[realtime] loadMessages start from deferred reconcile', {
-        groupId: state.currentGroup.id,
-        attemptId: messagesRealtime.attemptId || null
-      });
-      await loadMessages();
-      console.log('[realtime] loadMessages done from deferred reconcile', {
-        groupId: state.currentGroup.id,
-        attemptId: messagesRealtime.attemptId || null,
-        messageCount: state.messages.length
-      });
-      renderChatMessages();
-    }
-
-    async function cleanupMessagesRealtime(channel, meta = {}) {
-      if (!channel) return;
-      const messagesRealtime = getMessagesRealtimeState();
-      const isActiveChannel = messagesRealtime.channel === channel;
-      console.log('[realtime] messages cleanup start', {
-        reason: meta.reason || 'unspecified',
-        groupId: meta.groupId || messagesRealtime.groupId || null,
-        attemptId: meta.attemptId || messagesRealtime.attemptId || null,
-        isActiveChannel
-      });
+      polling.inFlight[timerKey] = true;
       try {
-        await supabaseClient.removeChannel(channel);
+        await work();
       } catch (error) {
-        console.warn('[realtime] messages cleanup removeChannel failed', {
-          reason: meta.reason || 'unspecified',
-          groupId: meta.groupId || messagesRealtime.groupId || null,
-          attemptId: meta.attemptId || messagesRealtime.attemptId || null,
+        console.error('[polling] refresh failed', {
+          timerKey,
+          groupId,
+          source: sourceLabel,
           error
         });
+      } finally {
+        polling.inFlight[timerKey] = false;
       }
-      if (isActiveChannel) {
-        messagesRealtime.groupId = null;
-        messagesRealtime.channel = null;
-        messagesRealtime.attemptId = 0;
-        messagesRealtime.status = 'idle';
-        messagesRealtime.deferredReconcilePending = false;
-      }
-      console.log('[realtime] messages cleanup done', {
-        reason: meta.reason || 'unspecified',
-        groupId: meta.groupId || messagesRealtime.groupId || null,
-        attemptId: meta.attemptId || messagesRealtime.attemptId || null,
-        clearedActive: isActiveChannel
-      });
     }
 
-    async function handleMessagesRealtimePayload(payload, context) {
-      const messagesRealtime = getMessagesRealtimeState();
-      const payloadGroupId = getPayloadGroupId(payload);
-      const currentGroupId = state.currentGroup?.id || null;
-      const senderId = payload?.new?.sender_user_id || payload?.old?.sender_user_id || null;
-      const eventType = payload?.eventType || null;
-      const isStaleAttempt = state.realtimeAttemptSeq !== context.attemptId;
-      const isActiveSubscription = messagesRealtime.channel === context.channel
-        && messagesRealtime.attemptId === context.attemptId
-        && messagesRealtime.groupId === context.groupId;
+    function startPollingTimer(timerKey, intervalMs, groupId, work) {
+      clearPollingTimer(timerKey);
+      const timer = setInterval(async () => {
+        await runPollingRefresh(timerKey, groupId, work, `poll:${timerKey}`);
+      }, intervalMs);
+      getPollingState().timers[timerKey] = timer;
+    }
 
-      console.log('[realtime] messages payload received', {
-        eventType,
-        payloadGroupId,
-        currentGroupId,
-        senderId,
-        attemptId: context.attemptId,
-        activeAttemptId: messagesRealtime.attemptId || null,
-        isActiveSubscription,
-        isStaleAttempt
-      });
+    async function refreshMessages(options = {}) {
+      const groupId = options.groupId || state.currentGroup?.id;
+      if (!groupId || !isPollingContextActive(groupId)) return;
 
-      if (!payloadGroupId) {
-        console.log('[realtime] messages callback skipped', { reason: 'missing-payload-group-id', eventType, attemptId: context.attemptId });
-        return;
-      }
-      if (!state.currentGroup?.id) {
-        console.log('[realtime] messages callback skipped', { reason: 'no-current-group', payloadGroupId, attemptId: context.attemptId });
-        return;
-      }
-      if (isStaleAttempt) {
-        console.log('[realtime] messages callback skipped', {
-          reason: 'stale-attempt',
-          payloadGroupId,
-          attemptId: context.attemptId,
-          currentAttemptId: state.realtimeAttemptSeq || null
-        });
-        return;
-      }
-      if (!isActiveSubscription) {
-        console.log('[realtime] messages callback skipped', {
-          reason: 'inactive-subscription',
-          payloadGroupId,
-          attemptId: context.attemptId,
-          activeAttemptId: messagesRealtime.attemptId || null
-        });
-        return;
-      }
-      if (payloadGroupId !== state.currentGroup.id) {
-        console.log('[realtime] messages callback skipped', {
-          reason: 'payload-group-mismatch',
-          payloadGroupId,
-          currentGroupId: state.currentGroup.id,
-          attemptId: context.attemptId
-        });
-        return;
-      }
-      if (state.isHydratingInitialData) {
-        state.pendingRealtimeTables.add('messages');
-        console.log('[realtime] messages callback skipped', {
-          reason: 'hydration-in-progress',
-          payloadGroupId,
-          currentGroupId: state.currentGroup.id,
-          attemptId: context.attemptId
-        });
-        return;
-      }
-
-      console.log('[realtime] loadMessages start from realtime', {
-        eventType,
-        groupId: state.currentGroup.id,
-        attemptId: context.attemptId
-      });
+      console.log('[polling] refresh messages start', { groupId, source: options.source || 'manual' });
       await loadMessages();
-      console.log('[realtime] loadMessages done from realtime', {
-        messageCount: state.messages.length,
-        groupId: state.currentGroup.id,
-        attemptId: context.attemptId
-      });
-
-      console.log('[realtime] renderChatMessages start', {
-        messageCount: state.messages.length,
-        source: 'realtime',
-        attemptId: context.attemptId
-      });
       renderChatMessages();
-      console.log('[realtime] renderChatMessages done', {
-        messageCount: state.messages.length,
-        source: 'realtime',
-        attemptId: context.attemptId
-      });
+      console.log('[polling] refresh messages done', { groupId, count: state.messages.length, source: options.source || 'manual' });
     }
 
-    function attachMessagesRealtimeBinding(channel, context) {
-      const messageBinding = { event: '*', schema: 'public', table: 'messages' };
-      console.log('[realtime] attaching messages binding', {
-        topic: context.channelTopic,
-        schema: messageBinding.schema,
-        table: messageBinding.table,
-        event: messageBinding.event,
-        filter: null,
-        groupId: context.groupId,
-        attemptId: context.attemptId
-      });
+    async function refreshAlerts(options = {}) {
+      const groupId = options.groupId || state.currentGroup?.id;
+      if (!groupId || !isPollingContextActive(groupId)) return;
 
-      return channel.on('postgres_changes', messageBinding, async (payload) => {
-        await handleMessagesRealtimePayload(payload, context);
-      });
+      console.log('[polling] refresh alerts start', { groupId, source: options.source || 'manual' });
+      await loadAlerts();
+      await loadMessages();
+      refreshAlertSurfaces();
+      console.log('[polling] refresh alerts done', { groupId, count: state.alerts.length, source: options.source || 'manual' });
     }
 
-    function waitForRealtimeSubscribed(channel, groupId, attemptId) {
-      return new Promise((resolve) => {
-        let settled = false;
-        let latestStatus = 'JOINING';
-        const settle = (status) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(waitTimer);
-          resolve({ status, latestStatus });
-        };
+    async function refreshTasks(options = {}) {
+      const groupId = options.groupId || state.currentGroup?.id;
+      if (!groupId || !isPollingContextActive(groupId)) return;
 
-        const waitTimer = setTimeout(() => settle('APP_MAX_WAIT_EXCEEDED'), REALTIME_SUBSCRIBE_MAX_WAIT_MS);
-
-        channel.subscribe((nextStatus) => {
-          latestStatus = nextStatus;
-          const isLatestAttempt = state.realtimeAttemptSeq === attemptId;
-          const messagesRealtime = getMessagesRealtimeState();
-          const becameActive = nextStatus === 'SUBSCRIBED'
-            && isLatestAttempt
-            && messagesRealtime.channel === channel
-            && messagesRealtime.attemptId === attemptId;
-          console.log('[realtime] channel status', {
-            groupId,
-            attemptId,
-            status: nextStatus,
-            isLatestAttempt,
-            retryCount: state.realtimeRetryCount,
-            becameActive
-          });
-          if (nextStatus === 'SUBSCRIBED') {
-            settle('SUBSCRIBED');
-            return;
-          }
-          if (nextStatus === 'CHANNEL_ERROR' || nextStatus === 'CLOSED') {
-            settle(nextStatus);
-            return;
-          }
-          if (nextStatus === 'TIMED_OUT') return;
-        });
-      });
-    }
-
-    async function unsubscribeRealtime() {
-      const activeChannels = Array.isArray(state.realtimeChannels) ? state.realtimeChannels : [];
-      const messagesRealtime = getMessagesRealtimeState();
-      clearRealtimeRetryTimer();
-      state.realtimeRetryCount = 0;
-      state.realtimePendingGroupId = null;
-      state.realtimeAttemptSeq = 0;
-
-      if (activeChannels.length === 0) {
-        state.realtimeChannels = [];
-        state.realtimeGroupId = null;
-        return;
-      }
-
-      await Promise.allSettled(activeChannels.map(channel => supabaseClient.removeChannel(channel)));
-
-      state.realtimeChannels = [];
-      state.realtimeGroupId = null;
-      messagesRealtime.groupId = null;
-      messagesRealtime.channel = null;
-      messagesRealtime.attemptId = 0;
-      messagesRealtime.status = 'idle';
-      messagesRealtime.deferredReconcilePending = false;
-    }
-
-
-    async function subscribeToGroupRealtime(groupId) {
-      if (!groupId) return;
-      await ensureRawMessagesDebugSubscription(groupId);
-      const session = (await supabaseClient.auth.getSession())?.data?.session || null;
-      const sessionAccessToken = session?.access_token || null;
-      if (supabaseClient?.realtime?.setAuth) {
-        supabaseClient.realtime.setAuth(sessionAccessToken || null);
-      }
-      if (!state.currentUser?.id || !state.currentMembership || state.currentGroup?.id !== groupId) {
-        console.warn('[realtime] skipped subscribe: prerequisites not ready', {
-          hasUser: !!state.currentUser?.id,
-          hasMembership: !!state.currentMembership,
-          currentGroupId: state.currentGroup?.id,
-          targetGroupId: groupId
-        });
-        return;
-      }
-
-      // Avoid duplicate subscriptions when init/group flow runs more than once for the same group.
-      if (state.realtimeGroupId === groupId && state.realtimeChannels.length > 0) {
-        return;
-      }
-      if (state.realtimePendingGroupId === groupId) {
-        return;
-      }
-      state.realtimePendingGroupId = groupId;
-      const attemptId = Number(state.realtimeAttemptSeq || 0) + 1;
-      state.realtimeAttemptSeq = attemptId;
-      clearRealtimeRetryTimer();
-
-      // Always clear stale channels before creating new group-scoped subscriptions.
-      await unsubscribeRealtime();
-      state.realtimePendingGroupId = groupId;
-      state.realtimeAttemptSeq = attemptId;
-
-      const runRealtimeHandler = async (tableKey, work) => {
-        if (state.isHydratingInitialData) {
-          state.pendingRealtimeTables.add(tableKey);
-          console.log('[realtime] deferred during hydration', {
-            table: tableKey,
-            groupId
-          });
-          return;
-        }
-        try {
-          await work();
-        } catch (error) {
-          console.error('[realtime] handler failed', {
-            table: tableKey,
-            groupId,
-            error
-          });
-        }
-      };
-
-      const groupFilter = `group_id=eq.${groupId}`;
-      const channelTopic = `group-realtime:${groupId}`;
-      const messagesRealtime = getMessagesRealtimeState();
-      const subscriptionContext = {
-        attemptId,
-        groupId,
-        channelTopic,
-        channel: null
-      };
-      console.log('[realtime] subscribe attempt start', {
-        attemptId,
-        groupId,
-        userId: state.currentUser?.id || null,
-        membershipGroupId: state.currentMembership?.group_id || null,
-        currentGroupId: state.currentGroup?.id || null,
-        hasAccessToken: !!sessionAccessToken,
-        channelTopic,
-        messagesOnlyMode: REALTIME_MESSAGES_ONLY_MODE
-      });
-      let channel = supabaseClient.channel(channelTopic);
-      subscriptionContext.channel = channel;
-      channel = attachMessagesRealtimeBinding(channel, subscriptionContext)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: groupFilter }, async (payload) => {
-          const payloadGroupId = getPayloadGroupId(payload);
-          if (payloadGroupId && payloadGroupId !== groupId) {
-            console.log('[realtime] event skipped', {
-              table: 'tasks',
-              reason: 'group-mismatch',
-              payloadGroupId,
-              groupId
-            });
-            return;
-          }
-          console.log('[realtime] event accepted', { table: 'tasks', groupId, eventType: payload?.eventType || null });
-          await runRealtimeHandler('tasks', async () => {
-            await loadTasks();
-            recalculateContributions();
-            renderTasks();
-            renderCompletedTasks();
-            renderNearestDue();
-            renderProgress();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'alerts', filter: groupFilter }, async (payload) => {
-          const payloadGroupId = getPayloadGroupId(payload);
-          if (payloadGroupId && payloadGroupId !== groupId) {
-            console.log('[realtime] event skipped', {
-              table: 'alerts',
-              reason: 'group-mismatch',
-              payloadGroupId,
-              groupId
-            });
-            return;
-          }
-          console.log('[realtime] event accepted', { table: 'alerts', groupId, eventType: payload?.eventType || null });
-          await runRealtimeHandler('alerts', async () => {
-            await loadAlerts();
-            await loadMessages();
-            renderAlerts();
-            renderChatMessages();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_reads' }, async (payload) => {
-          const alertId = getAlertIdFromPayload(payload);
-          const alertKnownInState = !!state.alerts.find((alert) => String(alert.id) === String(alertId));
-          if (!alertKnownInState && !state.isHydratingInitialData) {
-            console.log('[realtime] event skipped', {
-              table: 'alert_reads',
-              reason: 'unknown-alert-id',
-              alertId,
-              groupId
-            });
-            return;
-          }
-          console.log('[realtime] event accepted', {
-            table: 'alert_reads',
-            groupId,
-            alertId,
-            eventType: payload?.eventType || null
-          });
-          await runRealtimeHandler('alerts', async () => {
-            await loadAlerts();
-            await loadMessages();
-            renderAlerts();
-            renderChatMessages();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'resources', filter: groupFilter }, async (payload) => {
-          const payloadGroupId = getPayloadGroupId(payload);
-          if (payloadGroupId && payloadGroupId !== groupId) {
-            console.log('[realtime] event skipped', {
-              table: 'resources',
-              reason: 'group-mismatch',
-              payloadGroupId,
-              groupId
-            });
-            return;
-          }
-          console.log('[realtime] event accepted', { table: 'resources', groupId, eventType: payload?.eventType || null });
-          await runRealtimeHandler('resources', async () => {
-            await loadResources();
-            await loadMessages();
-            recalculateContributions();
-            renderResources();
-            populateResourceTypeFilter();
-            renderChatMessages();
-            renderProgress();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'availability_blocks', filter: groupFilter }, async (payload) => {
-          const payloadGroupId = getPayloadGroupId(payload);
-          if (payloadGroupId && payloadGroupId !== groupId) {
-            console.log('[realtime] event skipped', {
-              table: 'availability_blocks',
-              reason: 'group-mismatch',
-              payloadGroupId,
-              groupId
-            });
-            return;
-          }
-          console.log('[realtime] event accepted', { table: 'availability_blocks', groupId, eventType: payload?.eventType || null });
-          await runRealtimeHandler('availability_blocks', async () => {
-            await loadAvailabilityBlocks();
-            if (state.currentView === 'timetable') {
-              renderSchedule();
-            }
-            syncMeetingRecommendationUI();
-            renderSnapshots();
-            updateStatusChips();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'group_members', filter: groupFilter }, async (payload) => {
-          const payloadGroupId = getPayloadGroupId(payload);
-          if (payloadGroupId && payloadGroupId !== groupId) {
-            console.log('[realtime] event skipped', {
-              table: 'group_members',
-              reason: 'group-mismatch',
-              payloadGroupId,
-              groupId
-            });
-            return;
-          }
-          console.log('[realtime] event accepted', { table: 'group_members', groupId, eventType: payload?.eventType || null });
-          await runRealtimeHandler('group_members', async () => {
-            await loadMembers();
-            await ensureGroupContentKey(state.currentGroup?.id);
-            await Promise.all([
-              loadTasks(),
-              loadAlerts(),
-              loadResources(),
-              loadAvailabilityBlocks()
-            ]);
-            await loadMessages();
-            renderAvatars();
-            populateMemberSelects();
-            refreshAll();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'member_public_keys' }, async (payload) => {
-          const payloadUserId = payload?.new?.user_id || payload?.old?.user_id || null;
-          const isCurrentGroupMember = !!state.memberByDbId.get(payloadUserId);
-          if (!isCurrentGroupMember && !state.isHydratingInitialData) {
-            console.log('[realtime] event skipped', {
-              table: 'member_public_keys',
-              reason: 'non-member-key',
-              payloadUserId,
-              groupId
-            });
-            return;
-          }
-          console.log('[realtime] event accepted', {
-            table: 'member_public_keys',
-            groupId,
-            payloadUserId,
-            eventType: payload?.eventType || null
-          });
-          await runRealtimeHandler('member_public_keys', async () => {
-            await ensureGroupContentKey(state.currentGroup?.id);
-            await loadMessages();
-            renderChatMessages();
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'group_key_envelopes', filter: groupFilter }, async (payload) => {
-          const payloadGroupId = getPayloadGroupId(payload);
-          if (payloadGroupId && payloadGroupId !== groupId) {
-            console.log('[realtime] event skipped', {
-              table: 'group_key_envelopes',
-              reason: 'group-mismatch',
-              payloadGroupId,
-              groupId
-            });
-            return;
-          }
-          console.log('[realtime] event accepted', { table: 'group_key_envelopes', groupId, eventType: payload?.eventType || null });
-          await runRealtimeHandler('group_key_envelopes', async () => {
-            delete state.groupContentKeys[groupId];
-            await ensureGroupContentKey(state.currentGroup?.id);
-            await loadMessages();
-            renderChatMessages();
-          });
-        });
-
-      messagesRealtime.status = 'subscribing';
-      const { status, latestStatus } = await waitForRealtimeSubscribed(channel, groupId, attemptId);
-      const isLatestAttempt = state.realtimeAttemptSeq === attemptId;
-      const becameActive = status === 'SUBSCRIBED' && isLatestAttempt;
-      messagesRealtime.status = status;
-
-      if (status !== 'SUBSCRIBED' && !(!isLatestAttempt && latestStatus === 'SUBSCRIBED')) {
-        console.error('subscribeToGroupRealtime failed', status, {
-          attemptId,
-          groupId,
-          latestStatus,
-          isLatestAttempt,
-          retryCount: state.realtimeRetryCount,
-          becameActive
-        });
-        await cleanupMessagesRealtime(channel, { reason: `subscribe-failed:${status}`, groupId, attemptId });
-        state.realtimePendingGroupId = null;
-        scheduleRealtimeRetry(groupId, status);
-        return;
-      }
-
-      if (!isLatestAttempt) {
-        console.warn('[realtime] late success ignored because a newer attempt exists', {
-          attemptId,
-          groupId,
-          currentAttemptId: state.realtimeAttemptSeq
-        });
-        await cleanupMessagesRealtime(channel, { reason: 'late-success-stale-attempt', groupId, attemptId });
-        return;
-      }
-
-      const previousChannel = messagesRealtime.channel;
-      if (previousChannel && previousChannel !== channel) {
-        await cleanupMessagesRealtime(previousChannel, { reason: 'replace-active-channel', groupId, attemptId });
-      }
-      messagesRealtime.groupId = groupId;
-      messagesRealtime.channel = channel;
-      messagesRealtime.attemptId = attemptId;
-      messagesRealtime.status = 'SUBSCRIBED';
-      state.realtimeChannels = [channel];
-      state.realtimeGroupId = groupId;
-      state.realtimePendingGroupId = null;
-      state.realtimeRetryCount = 0;
-      clearRealtimeRetryTimer();
-
-      console.log('[realtime] channel status', {
-        groupId,
-        attemptId,
-        status: 'SUBSCRIBED',
-        retryCount: state.realtimeRetryCount,
-        isLatestAttempt,
-        becameActive: true
-      });
-
-      if (state.currentGroup?.id === groupId) {
-        if (state.isHydratingInitialData) {
-          state.pendingRealtimeTables.add('messages');
-          messagesRealtime.deferredReconcilePending = true;
-          console.log('[realtime] deferred reconcile scheduled', {
-            source: 'subscribe-reconcile',
-            groupId,
-            attemptId
-          });
-          console.log('[realtime] messages callback skipped', {
-            reason: 'hydration-in-progress',
-            source: 'subscribe-reconcile',
-            groupId,
-            attemptId
-          });
-        } else {
-          console.log('[realtime] loadMessages start from subscribe reconcile', { groupId, attemptId });
-          await loadMessages();
-          console.log('[realtime] loadMessages done from subscribe reconcile', {
-            groupId,
-            attemptId,
-            messageCount: state.messages.length
-          });
-        }
-      }
-    }
-
-
-    async function flushPendingRealtimeTables() {
-      if (!state.pendingRealtimeTables || state.pendingRealtimeTables.size === 0) return;
-      const pending = Array.from(state.pendingRealtimeTables);
-      state.pendingRealtimeTables.clear();
-
-      if (pending.includes('group_members')) {
-        await loadMembers();
-        await ensureGroupContentKey(state.currentGroup?.id);
-      }
-      if (pending.includes('member_public_keys')) {
-        await ensureGroupContentKey(state.currentGroup?.id);
-      }
-      if (pending.includes('group_key_envelopes')) {
-        if (state.currentGroup?.id) {
-          delete state.groupContentKeys[state.currentGroup.id];
-        }
-        await ensureGroupContentKey(state.currentGroup?.id);
-      }
-
-      if (pending.includes('alerts')) {
-        await loadAlerts();
-        await loadMessages();
-        renderAlerts();
-        renderChatMessages();
-      } else if (pending.includes('messages')) {
-        await loadMessages();
-        renderChatMessages();
-      }
-
-      if (pending.includes('tasks')) {
-        await loadTasks();
-      }
-      if (pending.includes('resources')) {
-        await loadResources();
-      }
-      if (pending.includes('availability_blocks')) {
-        await loadAvailabilityBlocks();
-        if (state.currentView === 'timetable') {
-          renderSchedule();
-        }
-      }
-
+      console.log('[polling] refresh tasks start', { groupId, source: options.source || 'manual' });
+      await loadTasks();
       recalculateContributions();
       renderTasks();
       renderCompletedTasks();
-      renderResources();
-      populateResourceTypeFilter();
       renderNearestDue();
       renderProgress();
       renderSnapshots();
       updateStatusChips();
+      console.log('[polling] refresh tasks done', { groupId, count: state.tasks.length, source: options.source || 'manual' });
+    }
+
+    async function refreshResources(options = {}) {
+      const groupId = options.groupId || state.currentGroup?.id;
+      if (!groupId || !isPollingContextActive(groupId)) return;
+
+      console.log('[polling] refresh resources start', { groupId, source: options.source || 'manual' });
+      await loadResources();
+      await loadMessages();
+      recalculateContributions();
+      renderResources();
+      populateResourceTypeFilter();
+      renderChatMessages();
+      renderProgress();
+      renderSnapshots();
+      updateStatusChips();
+      console.log('[polling] refresh resources done', { groupId, count: state.resources.length, source: options.source || 'manual' });
+    }
+
+    async function refreshAvailability(options = {}) {
+      const groupId = options.groupId || state.currentGroup?.id;
+      if (!groupId || !isPollingContextActive(groupId)) return;
+
+      console.log('[polling] refresh availability start', { groupId, source: options.source || 'manual' });
+      await loadAvailabilityBlocks();
+      if (state.currentView === 'timetable') {
+        renderSchedule();
+      }
       syncMeetingRecommendationUI();
+      renderSnapshots();
+      updateStatusChips();
+      console.log('[polling] refresh availability done', { groupId, count: state.availabilityBlocks.length, source: options.source || 'manual' });
+    }
+
+    async function refreshGroupMembers(options = {}) {
+      const groupId = options.groupId || state.currentGroup?.id;
+      if (!groupId || !isPollingContextActive(groupId)) return;
+
+      const previousMemberSignature = state.members.map(member => member.dbId).join('|');
+      console.log('[polling] refresh members start', { groupId, source: options.source || 'manual' });
+      await loadMembers();
+      renderAvatars();
+      populateMemberSelects();
+
+      const nextMemberSignature = state.members.map(member => member.dbId).join('|');
+      if (previousMemberSignature !== nextMemberSignature) {
+        console.log('[polling] members changed, reconciling group state', { groupId });
+        await reconcileGroupState({ groupId, source: options.source || 'members-refresh' });
+        return;
+      }
+
+      recalculateContributions();
+      renderProgress();
+      updateStatusChips();
+      console.log('[polling] refresh members done', { groupId, count: state.members.length, source: options.source || 'manual' });
+    }
+
+    async function refreshGroupEncryptionState(options = {}) {
+      const groupId = options.groupId || state.currentGroup?.id;
+      if (!groupId || !isPollingContextActive(groupId)) return;
+
+      try {
+        await ensureGroupContentKey(groupId);
+      } catch (error) {
+        console.warn('[polling] ensureGroupContentKey failed', { groupId, error });
+        return;
+      }
+
+      await refreshMessages({ groupId, source: options.source || 'poll:e2ee' });
+    }
+
+    async function reconcileGroupState(options = {}) {
+      const groupId = options.groupId || state.currentGroup?.id;
+      if (!groupId || !isPollingContextActive(groupId)) return;
+
+      console.log('[polling] reconcile group state start', { groupId, source: options.source || 'manual' });
+      await ensureGroupContentKey(groupId);
+      await Promise.all([
+        loadTasks(),
+        loadAlerts(),
+        loadResources(),
+        loadAvailabilityBlocks()
+      ]);
+      await loadMessages();
+      renderAvatars();
+      populateMemberSelects();
+      refreshAll();
+      console.log('[polling] reconcile group state done', { groupId, source: options.source || 'manual' });
+    }
+
+    async function startGroupPolling(groupId = state.currentGroup?.id) {
+      if (!isPollingContextActive(groupId)) return;
+
+      const polling = getPollingState();
+      if (polling.activeGroupId === groupId && Object.keys(polling.timers).length > 0) {
+        return;
+      }
+
+      await stopGroupPolling('start-group-polling');
+      polling.activeGroupId = groupId;
+
+      console.log('[polling] started', { groupId });
+      startPollingTimer('messages', POLLING_INTERVALS_MS.messages, groupId, async () => refreshMessages({ groupId, source: 'poll:messages' }));
+      startPollingTimer('alerts', POLLING_INTERVALS_MS.alerts, groupId, async () => refreshAlerts({ groupId, source: 'poll:alerts' }));
+      startPollingTimer('tasks', POLLING_INTERVALS_MS.tasks, groupId, async () => refreshTasks({ groupId, source: 'poll:tasks' }));
+      startPollingTimer('availability', POLLING_INTERVALS_MS.availability, groupId, async () => refreshAvailability({ groupId, source: 'poll:availability' }));
+      startPollingTimer('resources', POLLING_INTERVALS_MS.resources, groupId, async () => refreshResources({ groupId, source: 'poll:resources' }));
+      startPollingTimer('members', POLLING_INTERVALS_MS.members, groupId, async () => refreshGroupMembers({ groupId, source: 'poll:members' }));
+      startPollingTimer('e2ee', POLLING_INTERVALS_MS.e2ee, groupId, async () => refreshGroupEncryptionState({ groupId, source: 'poll:e2ee' }));
     }

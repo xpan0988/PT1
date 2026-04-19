@@ -89,9 +89,7 @@
         return;
       }
 
-      await loadResources();
-      await loadMessages();
-      refreshAll();
+      await refreshResources({ source: 'post-action:add-resource' });
     }
 
 
