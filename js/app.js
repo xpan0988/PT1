@@ -116,6 +116,12 @@
       }
 
       try {
+        await flushDeferredMessagesRealtimeReconcile();
+      } catch (error) {
+        console.error('[post-auth:deferred-reconcile] flushDeferredMessagesRealtimeReconcile failed', error);
+      }
+
+      try {
         await flushPendingRealtimeTables();
       } catch (error) {
         console.error('[post-auth:realtime-flush] flushPendingRealtimeTables failed', error);
