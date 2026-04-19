@@ -484,10 +484,91 @@
           groupId: null,
           channel: null,
           attemptId: 0,
-          status: 'idle'
+          status: 'idle',
+          deferredReconcilePending: false
         };
       }
       return state.messagesRealtime;
+    }
+
+    function getRawMessagesDebugRealtimeState() {
+      if (!state.rawMessagesDebugRealtime || typeof state.rawMessagesDebugRealtime !== 'object') {
+        state.rawMessagesDebugRealtime = {
+          groupId: null,
+          channel: null,
+          topic: null,
+          status: 'idle'
+        };
+      }
+      return state.rawMessagesDebugRealtime;
+    }
+
+    async function ensureRawMessagesDebugSubscription(groupId) {
+      if (!groupId) return;
+      const debugState = getRawMessagesDebugRealtimeState();
+      if (debugState.groupId === groupId && debugState.channel) return;
+
+      if (debugState.channel && debugState.groupId !== groupId) {
+        try {
+          await supabaseClient.removeChannel(debugState.channel);
+        } catch (error) {
+          console.warn('[rt-debug] raw messages cleanup removeChannel failed', {
+            groupId: debugState.groupId || null,
+            topic: debugState.topic || null,
+            error
+          });
+        }
+      }
+
+      const debugTopic = `rt-debug:raw-messages:${groupId}`;
+      let debugChannel = supabaseClient.channel(debugTopic);
+      debugChannel = debugChannel.on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
+        console.log('[rt-debug] raw messages payload', {
+          eventType: payload?.eventType || null,
+          newGroupId: payload?.new?.group_id || null,
+          oldGroupId: payload?.old?.group_id || null,
+          senderUserId: payload?.new?.sender_user_id || payload?.old?.sender_user_id || null,
+          messageId: payload?.new?.id || payload?.old?.id || null
+        });
+      });
+
+      debugChannel.subscribe((nextStatus) => {
+        const topic = debugChannel?.topic || debugTopic;
+        debugState.status = nextStatus;
+        console.log('[rt-debug] raw messages channel status', {
+          status: nextStatus,
+          topic
+        });
+      });
+
+      debugState.groupId = groupId;
+      debugState.channel = debugChannel;
+      debugState.topic = debugTopic;
+      debugState.status = 'subscribing';
+      window.__rtDebugMessagesChannel = debugChannel;
+      window.__rtDebugMessagesChannelTopic = debugTopic;
+    }
+
+    async function flushDeferredMessagesRealtimeReconcile() {
+      const messagesRealtime = getMessagesRealtimeState();
+      if (!messagesRealtime.deferredReconcilePending) return;
+      if (!state.currentGroup?.id) {
+        messagesRealtime.deferredReconcilePending = false;
+        return;
+      }
+
+      messagesRealtime.deferredReconcilePending = false;
+      console.log('[realtime] loadMessages start from deferred reconcile', {
+        groupId: state.currentGroup.id,
+        attemptId: messagesRealtime.attemptId || null
+      });
+      await loadMessages();
+      console.log('[realtime] loadMessages done from deferred reconcile', {
+        groupId: state.currentGroup.id,
+        attemptId: messagesRealtime.attemptId || null,
+        messageCount: state.messages.length
+      });
+      renderChatMessages();
     }
 
     async function cleanupMessagesRealtime(channel, meta = {}) {
@@ -515,6 +596,7 @@
         messagesRealtime.channel = null;
         messagesRealtime.attemptId = 0;
         messagesRealtime.status = 'idle';
+        messagesRealtime.deferredReconcilePending = false;
       }
       console.log('[realtime] messages cleanup done', {
         reason: meta.reason || 'unspecified',
@@ -698,11 +780,13 @@
       messagesRealtime.channel = null;
       messagesRealtime.attemptId = 0;
       messagesRealtime.status = 'idle';
+      messagesRealtime.deferredReconcilePending = false;
     }
 
 
     async function subscribeToGroupRealtime(groupId) {
       if (!groupId) return;
+      await ensureRawMessagesDebugSubscription(groupId);
       const session = (await supabaseClient.auth.getSession())?.data?.session || null;
       const sessionAccessToken = session?.access_token || null;
       if (supabaseClient?.realtime?.setAuth) {
@@ -1022,6 +1106,12 @@
       if (state.currentGroup?.id === groupId) {
         if (state.isHydratingInitialData) {
           state.pendingRealtimeTables.add('messages');
+          messagesRealtime.deferredReconcilePending = true;
+          console.log('[realtime] deferred reconcile scheduled', {
+            source: 'subscribe-reconcile',
+            groupId,
+            attemptId
+          });
           console.log('[realtime] messages callback skipped', {
             reason: 'hydration-in-progress',
             source: 'subscribe-reconcile',

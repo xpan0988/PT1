@@ -28,6 +28,13 @@ const state = {
         groupId: null,
         channel: null,
         attemptId: 0,
+        status: 'idle',
+        deferredReconcilePending: false
+      },
+      rawMessagesDebugRealtime: {
+        groupId: null,
+        channel: null,
+        topic: null,
         status: 'idle'
       },
       memberIndexByDbId: new Map(),
