@@ -83,6 +83,12 @@
       state.realtimeRetryTimer = null;
       state.realtimeRetryCount = 0;
       state.realtimeAttemptSeq = 0;
+      state.messagesRealtime = {
+        groupId: null,
+        channel: null,
+        attemptId: 0,
+        status: 'idle'
+      };
       state.pendingRealtimeTables = new Set();
       state.openScheduleSections = {};
       state.currentView = 'dashboard';
@@ -874,6 +880,12 @@
       state.realtimePendingGroupId = null;
       state.realtimeRetryCount = 0;
       state.realtimeAttemptSeq = 0;
+      state.messagesRealtime = {
+        groupId: null,
+        channel: null,
+        attemptId: 0,
+        status: 'idle'
+      };
       state.hasRenderedSchedule = false;
       state.isHydratingInitialData = false;
       state.groupContentKeys = {};

@@ -24,6 +24,12 @@ const state = {
       realtimeRetryTimer: null,
       realtimeRetryCount: 0,
       realtimeAttemptSeq: 0,
+      messagesRealtime: {
+        groupId: null,
+        channel: null,
+        attemptId: 0,
+        status: 'idle'
+      },
       memberIndexByDbId: new Map(),
       memberByDbId: new Map(),
       isHydratingInitialData: false,
