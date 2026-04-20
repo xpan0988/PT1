@@ -13,11 +13,15 @@
     // =========================
     async function runStartupPhase(label, work) {
       const timerLabel = `[startup] ${label}`;
-      console.time(timerLabel);
+      if (DEBUG_LOGS) {
+        console.time(timerLabel);
+      }
       try {
         return await work();
       } finally {
-        console.timeEnd(timerLabel);
+        if (DEBUG_LOGS) {
+          console.timeEnd(timerLabel);
+        }
       }
     }
 
@@ -117,8 +121,6 @@
 
     }
 
-    window.handlePostAuthSuccess = handlePostAuthSuccess;
-
     async function init() {
       // Note: run StudyMesh from a local HTTP server (for example http://localhost),
       // not from file://, so browser auth/storage APIs can work correctly.
@@ -129,7 +131,9 @@
         }
       });
 
-      console.time('[startup] total');
+      if (DEBUG_LOGS) {
+        console.time('[startup] total');
+      }
       await runStartupPhase('initSupabase', initSupabase);
       await runStartupPhase('initAuthStateSync', async () => initAuthStateSync());
       state.isAuthBootstrapping = true;
@@ -162,7 +166,9 @@
           const statusEl = document.getElementById('authStatusMessage');
           setAuthActionAvailability(!state.isAuthActionPending, statusEl?.textContent || '');
         }
-        console.timeEnd('[startup] total');
+        if (DEBUG_LOGS) {
+          console.timeEnd('[startup] total');
+        }
       }
     }
 
@@ -259,16 +265,6 @@
       showToast(`Task deleted: ${task.title}`, 'task');
     }
 
-    function addChatMessage(senderId, text, timeLabel) {
-      state.messages.push({
-        id: Date.now() + Math.random(),
-        type: 'text',
-        senderId,
-        text,
-        time: timeLabel || formatTime(new Date()),
-      });
-    }
-
     function getCurrentMemberIndex() {
       return state.memberIndexByDbId.get(state.currentUser?.id) ?? -1;
     }
@@ -289,36 +285,7 @@
       if (completed) state.contributions[assigneeId].tasksCompleted += 1;
     }
 
-    function createAlertSeed(senderId, text, timeLabel, acknowledgedBy) {
-      const alertId = Date.now() + Math.floor(Math.random() * 1000);
-
-      state.alerts.push({
-        id: alertId,
-        senderId,
-        text,
-        time: timeLabel,
-        createdAt: new Date().toISOString(),
-        acknowledgedBy: [...new Set([senderId, ...acknowledgedBy])],
-      });
-
-      state.messages.push({
-        id: 'alert-' + alertId,
-        type: 'alert',
-        senderId,
-        text,
-        time: timeLabel,
-        alertId,
-      });
-
-      return alertId;
-    }
-
-    function acknowledgeAlertSeed(alertId, memberId) {
-      const alert = state.alerts.find(a => a.id === alertId);
-      if (alert && !alert.acknowledgedBy.includes(memberId)) {
-        alert.acknowledgedBy.push(memberId);
-      }
-    }
+    
 
     function sortByDueDateAsc(a, b) {
       return parseDateInputToDate(a.dueDate) - parseDateInputToDate(b.dueDate);

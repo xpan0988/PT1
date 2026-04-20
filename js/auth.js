@@ -87,6 +87,8 @@
       state.hasRenderedSchedule = false;
       state.isHydratingInitialData = false;
       state.groupContentKeys = {};
+      state.groupEnvelopeBackfillInFlight = {};
+      state.groupEnvelopeBackfillLastRunAt = {};
       state.userKeypairReady = false;
       state.userKeypair = null;
       state.e2eeInitWarning = '';
@@ -199,7 +201,7 @@
 
     function applySession(session, sourceLabel = 'session') {
       state.currentUser = session?.user || null;
-      console.log(`[auth] ${sourceLabel}`, state.currentUser?.id || 'none');
+      debugLog(DEBUG_AUTH_LOGS, `[auth] ${sourceLabel}`, state.currentUser?.id || 'none');
     }
 
     async function restoreSession() {
@@ -221,7 +223,7 @@
         return session;
       }
 
-      console.log('[auth] no restorable session found');
+      debugLog(DEBUG_AUTH_LOGS, '[auth] no restorable session found');
       return null;
     }
 
@@ -300,9 +302,9 @@
       setAuthActionAvailability(false, 'Signing in…');
       try {
         const data = await signInWithEmail(email, password);
-        if (data?.session && window.handlePostAuthSuccess) {
+        if (data?.session && typeof handlePostAuthSuccess === 'function') {
           try {
-            await window.handlePostAuthSuccess();
+            await handlePostAuthSuccess();
             if (state.e2eeInitWarning) {
               statusEl.textContent = state.e2eeInitWarning;
             }
@@ -336,9 +338,9 @@
       setAuthActionAvailability(false, 'Creating account…');
       try {
         const data = await signUpWithEmail(email, password);
-        if (data?.session && window.handlePostAuthSuccess) {
+        if (data?.session && typeof handlePostAuthSuccess === 'function') {
           try {
-            await window.handlePostAuthSuccess();
+            await handlePostAuthSuccess();
             if (state.e2eeInitWarning) {
               statusEl.textContent = state.e2eeInitWarning;
             }
@@ -374,9 +376,9 @@
       setAuthActionAvailability(false, 'Continuing as guest…');
       try {
         const data = await signInAsGuest();
-        if (data?.session && window.handlePostAuthSuccess) {
+        if (data?.session && typeof handlePostAuthSuccess === 'function') {
           try {
-            await window.handlePostAuthSuccess();
+            await handlePostAuthSuccess();
             if (state.e2eeInitWarning) {
               statusEl.textContent = state.e2eeInitWarning;
             }
@@ -534,7 +536,7 @@
       if (data && data.groups) {
         state.currentMembership = data;
         state.currentGroup = data.groups;
-        console.log('[auth] membership restored', { userId, groupId: data.groups.id });
+        debugLog(DEBUG_AUTH_LOGS, '[auth] membership restored', { userId, groupId: data.groups.id });
         persistSessionRecovery({
           group: data.groups,
           displayName: state.currentProfile?.display_name || ''
@@ -557,7 +559,7 @@
 
       const restoredFromCache = await tryRestoreMembershipFromDeviceCache();
       if (restoredFromCache) {
-        console.log('[auth] membership restored from device cache', {
+        debugLog(DEBUG_AUTH_LOGS, '[auth] membership restored from device cache', {
           userId: state.currentUser?.id,
           groupId: state.currentGroup?.id
         });
@@ -724,7 +726,7 @@
 
 
     async function joinGroupFlow(groupName, password) {
-      console.log('[auth] join flow triggered', { userId: state.currentUser?.id, groupName });
+      debugLog(DEBUG_AUTH_LOGS, '[auth] join flow triggered', { userId: state.currentUser?.id, groupName });
       const { data: targetGroup, error: groupError } = await supabaseClient
         .from('groups')
         .select('*')
@@ -863,6 +865,8 @@
       state.hasRenderedSchedule = false;
       state.isHydratingInitialData = false;
       state.groupContentKeys = {};
+      state.groupEnvelopeBackfillInFlight = {};
+      state.groupEnvelopeBackfillLastRunAt = {};
 
       updateHeaderGroupTag();
       renderAvatars();

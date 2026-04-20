@@ -298,7 +298,7 @@ async function getGroupEnvelopeState(groupId, keyVersion = E2EE_KEY_VERSION) {
   const membersMissingPublicKeys = uniqueMemberIds.filter((memberId) => !publicKeyUserIds.has(memberId));
   const membersWithEnvelopes = uniqueMemberIds.filter((memberId) => envelopeUserIds.has(memberId));
   const membersMissingEnvelope = membersWithPublicKeys.filter((memberId) => !envelopeUserIds.has(memberId));
-  console.log('[e2ee:envelope-state]', {
+  debugLog(DEBUG_E2EE_LOGS, '[e2ee:envelope-state]', {
     groupId,
     keyVersion,
     memberCount: uniqueMemberIds.length,
@@ -369,7 +369,7 @@ async function backfillMissingGroupKeyEnvelopes(groupId, groupKey, keyVersion = 
   const targetMemberIds = envelopeState.membersMissingEnvelope;
   if (targetMemberIds.length === 0) {
     if (envelopeState.membersMissingPublicKeys.length > 0) {
-      console.log('[e2ee:envelope-backfill] pending members still missing public keys', {
+      debugLog(DEBUG_E2EE_LOGS, '[e2ee:envelope-backfill] pending members still missing public keys', {
         groupId,
         keyVersion,
         missingPublicKeys: envelopeState.membersMissingPublicKeys
@@ -385,7 +385,7 @@ async function backfillMissingGroupKeyEnvelopes(groupId, groupKey, keyVersion = 
   if (keyMaterial.groupKey && !state.groupContentKeys[groupId]) {
     state.groupContentKeys[groupId] = keyMaterial.groupKey;
   }
-  console.log('[e2ee:envelope-backfill] key material availability', {
+  debugLog(DEBUG_E2EE_LOGS, '[e2ee:envelope-backfill] key material availability', {
     groupId,
     keyVersion,
     source: keyMaterial.source,
@@ -427,7 +427,7 @@ async function backfillMissingGroupKeyEnvelopes(groupId, groupKey, keyVersion = 
 
   if (envelopeRows.length > 0) {
     await upsertGroupKeyEnvelopes(envelopeRows);
-    console.log('[e2ee:envelope-backfill] upserted missing envelopes', {
+    debugLog(DEBUG_E2EE_LOGS, '[e2ee:envelope-backfill] upserted missing envelopes', {
       groupId,
       keyVersion,
       targets: targetMemberIds,
@@ -476,7 +476,7 @@ function sleep(ms) {
 async function ensureGroupContentKey(groupId = state.currentGroup?.id) {
   if (!groupId || !state.currentUser?.id) return null;
   if (!state.hasResolvedMembership || !state.currentGroup?.id || state.currentGroup.id !== groupId || !state.currentMembership) {
-    console.log('Skipping group content key init; group context not ready', {
+    debugLog(DEBUG_E2EE_LOGS, 'Skipping group content key init; group context not ready', {
       groupId,
       currentGroupId: state.currentGroup?.id || null,
       hasResolvedMembership: !!state.hasResolvedMembership,
@@ -487,7 +487,7 @@ async function ensureGroupContentKey(groupId = state.currentGroup?.id) {
 
   if (!state.groupContentKeys) state.groupContentKeys = {};
   if (state.groupContentKeys[groupId]) {
-    console.log('[e2ee:group-key] using cached group content key', { groupId, keyVersion: E2EE_KEY_VERSION });
+    debugLog(DEBUG_E2EE_LOGS, '[e2ee:group-key] using cached group content key', { groupId, keyVersion: E2EE_KEY_VERSION });
     await maybeBackfillMissingGroupKeyEnvelopes(groupId, state.groupContentKeys[groupId], E2EE_KEY_VERSION);
     return state.groupContentKeys[groupId];
   }
@@ -515,7 +515,7 @@ async function ensureGroupContentKey(groupId = state.currentGroup?.id) {
       const memberIds = groupEnvelopeState?.memberIds?.length
         ? groupEnvelopeState.memberIds
         : state.members.map(member => member.dbId).filter(Boolean);
-      console.log('[e2ee:envelope-bootstrap] no active envelopes found; bootstrapping', {
+      debugLog(DEBUG_E2EE_LOGS, '[e2ee:envelope-bootstrap] no active envelopes found; bootstrapping', {
         groupId,
         keyVersion: E2EE_KEY_VERSION,
         memberCount: memberIds.length
@@ -544,7 +544,7 @@ async function ensureGroupContentKey(groupId = state.currentGroup?.id) {
         await sleep(800);
         envelope = await getMyGroupKeyEnvelope(groupId, state.currentUser.id, E2EE_KEY_VERSION);
         if (envelope) {
-          console.log('[e2ee:envelope-recovery] recovered current user envelope', { groupId, userId: state.currentUser.id, attempt });
+          debugLog(DEBUG_E2EE_LOGS, '[e2ee:envelope-recovery] recovered current user envelope', { groupId, userId: state.currentUser.id, attempt });
           break;
         }
       }
@@ -560,7 +560,7 @@ async function ensureGroupContentKey(groupId = state.currentGroup?.id) {
   }
 
   const groupKey = await decryptGroupKeyEnvelope(envelope, privateKey);
-  console.log('[e2ee:group-key] decrypted group content key for current user', {
+  debugLog(DEBUG_E2EE_LOGS, '[e2ee:group-key] decrypted group content key for current user', {
     groupId,
     userId: state.currentUser.id,
     keyVersion: E2EE_KEY_VERSION
