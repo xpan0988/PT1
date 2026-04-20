@@ -18,6 +18,16 @@ const SUPABASE_URL = "https://hggtasggdhdgiyhatgfu.supabase.co";
       return supabaseClient;
     }
 
+    const DEBUG_LOGS = false;
+    const DEBUG_AUTH_LOGS = false;
+    const DEBUG_POLLING_LOGS = false;
+    const DEBUG_E2EE_LOGS = false;
+
+    function debugLog(enabled, ...args) {
+      if (!enabled) return;
+      console.log(...args);
+    }
+
     const FILE_LIBRARY = [
       { name: 'interview_notes.pdf', icon: '📄', type: 'PDF' },
       { name: 'wireframe_v3.fig', icon: '🎨', type: 'FIG' },

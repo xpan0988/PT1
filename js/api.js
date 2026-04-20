@@ -518,28 +518,28 @@
       const groupId = options.groupId || state.currentGroup?.id;
       if (!groupId || !isPollingContextActive(groupId)) return;
 
-      console.log('[polling] refresh messages start', { groupId, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh messages start', { groupId, source: options.source || 'manual' });
       await loadMessages();
       renderChatMessages();
-      console.log('[polling] refresh messages done', { groupId, count: state.messages.length, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh messages done', { groupId, count: state.messages.length, source: options.source || 'manual' });
     }
 
     async function refreshAlerts(options = {}) {
       const groupId = options.groupId || state.currentGroup?.id;
       if (!groupId || !isPollingContextActive(groupId)) return;
 
-      console.log('[polling] refresh alerts start', { groupId, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh alerts start', { groupId, source: options.source || 'manual' });
       await loadAlerts();
       await loadMessages();
       refreshAlertSurfaces();
-      console.log('[polling] refresh alerts done', { groupId, count: state.alerts.length, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh alerts done', { groupId, count: state.alerts.length, source: options.source || 'manual' });
     }
 
     async function refreshTasks(options = {}) {
       const groupId = options.groupId || state.currentGroup?.id;
       if (!groupId || !isPollingContextActive(groupId)) return;
 
-      console.log('[polling] refresh tasks start', { groupId, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh tasks start', { groupId, source: options.source || 'manual' });
       await loadTasks();
       recalculateContributions();
       renderTasks();
@@ -548,14 +548,14 @@
       renderProgress();
       renderSnapshots();
       updateStatusChips();
-      console.log('[polling] refresh tasks done', { groupId, count: state.tasks.length, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh tasks done', { groupId, count: state.tasks.length, source: options.source || 'manual' });
     }
 
     async function refreshResources(options = {}) {
       const groupId = options.groupId || state.currentGroup?.id;
       if (!groupId || !isPollingContextActive(groupId)) return;
 
-      console.log('[polling] refresh resources start', { groupId, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh resources start', { groupId, source: options.source || 'manual' });
       await loadResources();
       await loadMessages();
       recalculateContributions();
@@ -565,14 +565,14 @@
       renderProgress();
       renderSnapshots();
       updateStatusChips();
-      console.log('[polling] refresh resources done', { groupId, count: state.resources.length, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh resources done', { groupId, count: state.resources.length, source: options.source || 'manual' });
     }
 
     async function refreshAvailability(options = {}) {
       const groupId = options.groupId || state.currentGroup?.id;
       if (!groupId || !isPollingContextActive(groupId)) return;
 
-      console.log('[polling] refresh availability start', { groupId, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh availability start', { groupId, source: options.source || 'manual' });
       await loadAvailabilityBlocks();
       if (state.currentView === 'timetable') {
         renderSchedule();
@@ -580,7 +580,7 @@
       syncMeetingRecommendationUI();
       renderSnapshots();
       updateStatusChips();
-      console.log('[polling] refresh availability done', { groupId, count: state.availabilityBlocks.length, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh availability done', { groupId, count: state.availabilityBlocks.length, source: options.source || 'manual' });
     }
 
     async function refreshGroupMembers(options = {}) {
@@ -588,14 +588,14 @@
       if (!groupId || !isPollingContextActive(groupId)) return;
 
       const previousMemberSignature = state.members.map(member => member.dbId).join('|');
-      console.log('[polling] refresh members start', { groupId, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh members start', { groupId, source: options.source || 'manual' });
       await loadMembers();
       renderAvatars();
       populateMemberSelects();
 
       const nextMemberSignature = state.members.map(member => member.dbId).join('|');
       if (previousMemberSignature !== nextMemberSignature) {
-        console.log('[polling] members changed, reconciling group state', { groupId });
+        debugLog(DEBUG_POLLING_LOGS, '[polling] members changed, reconciling group state', { groupId });
         await reconcileGroupState({ groupId, source: options.source || 'members-refresh' });
         return;
       }
@@ -603,7 +603,7 @@
       recalculateContributions();
       renderProgress();
       updateStatusChips();
-      console.log('[polling] refresh members done', { groupId, count: state.members.length, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] refresh members done', { groupId, count: state.members.length, source: options.source || 'manual' });
     }
 
     async function refreshGroupEncryptionState(options = {}) {
@@ -624,7 +624,7 @@
       const groupId = options.groupId || state.currentGroup?.id;
       if (!groupId || !isPollingContextActive(groupId)) return;
 
-      console.log('[polling] reconcile group state start', { groupId, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] reconcile group state start', { groupId, source: options.source || 'manual' });
       await ensureGroupContentKey(groupId);
       await Promise.all([
         loadTasks(),
@@ -636,7 +636,7 @@
       renderAvatars();
       populateMemberSelects();
       refreshAll();
-      console.log('[polling] reconcile group state done', { groupId, source: options.source || 'manual' });
+      debugLog(DEBUG_POLLING_LOGS, '[polling] reconcile group state done', { groupId, source: options.source || 'manual' });
     }
 
     async function startGroupPolling(groupId = state.currentGroup?.id) {
