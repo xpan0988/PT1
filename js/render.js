@@ -190,7 +190,7 @@
     function getMessageRenderSignature(msg, currentSenderId) {
       if (msg.type === 'alert') {
         const alertMeta = getChatAlertMeta(msg.alertId, currentSenderId);
-        return `${msg.id}|${msg.type}|${msg.text}|${msg.time}|${alertMeta.acknowledgedCount}|${alertMeta.hasRead}`;
+        return `${msg.id}|${msg.type}|${msg.text}|${msg.time}|${alertMeta.acknowledgedCount}|${alertMeta.hasRead}|${state.members.length}`;
       }
       return `${msg.id}|${msg.type}|${msg.text}|${msg.time}`;
     }
