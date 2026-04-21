@@ -78,94 +78,250 @@
       }));
     }
 
+    function createElementFromHtml(html) {
+      const template = document.createElement('template');
+      template.innerHTML = html.trim();
+      return template.content.firstElementChild;
+    }
 
-    function renderChatMessages() {
-      const wrap = document.getElementById('chatMessages');
-      if (state.messages.length === 0) {
-        wrap.innerHTML = `<div class="empty-state"><div class="emo">💬</div>No messages yet</div>`;
+    function isNearBottom(container, threshold = 90) {
+      if (!container) return true;
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      return distanceFromBottom <= threshold;
+    }
+
+    function captureListUiState(container) {
+      if (!container) return { scrollTop: 0, expandedIds: new Set() };
+      const expandedIds = new Set(
+        Array.from(container.querySelectorAll('[data-item-id].expanded,[data-item-id].open,[data-item-id][aria-expanded="true"]'))
+          .map(node => node.dataset.itemId)
+          .filter(Boolean)
+      );
+
+      return {
+        scrollTop: container.scrollTop,
+        expandedIds
+      };
+    }
+
+    function restoreListUiState(container, uiState) {
+      if (!container || !uiState) return;
+      container.scrollTop = uiState.scrollTop || 0;
+      const escapeSelector = (value) => {
+        if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
+        return String(value).replace(/"/g, '\\"');
+      };
+      (uiState.expandedIds || new Set()).forEach((itemId) => {
+        const node = container.querySelector(`[data-item-id="${escapeSelector(itemId)}"]`);
+        if (!node) return;
+        node.classList.add('expanded');
+        node.classList.add('open');
+        if (node.hasAttribute('aria-expanded')) {
+          node.setAttribute('aria-expanded', 'true');
+        }
+      });
+    }
+
+    function patchKeyedList(container, items, options) {
+      if (!container) return;
+      const {
+        emptyHtml,
+        itemId,
+        itemSignature,
+        renderItemHtml
+      } = options;
+
+      const previousUiState = captureListUiState(container);
+      if (items.length === 0) {
+        if (container.innerHTML !== emptyHtml) {
+          container.innerHTML = emptyHtml;
+        }
+        container.scrollTop = previousUiState.scrollTop || 0;
         return;
       }
 
-      const currentSenderId = getCurrentMemberIndex();
+      const currentNodesById = new Map(
+        Array.from(container.querySelectorAll('[data-item-id]'))
+          .map(node => [node.dataset.itemId, node])
+      );
+      const currentIds = Array.from(container.querySelectorAll('[data-item-id]')).map(node => node.dataset.itemId);
+      const nextIds = items.map(item => String(itemId(item)));
+      const isSameOrder = currentIds.length === nextIds.length
+        && currentIds.every((id, index) => id === nextIds[index]);
+      const hasRenderableChanges = items.some((item) => {
+        const id = String(itemId(item));
+        const expectedSignature = itemSignature(item);
+        return currentNodesById.get(id)?.dataset.renderSignature !== expectedSignature;
+      });
+      if (isSameOrder && !hasRenderableChanges) {
+        restoreListUiState(container, previousUiState);
+        return;
+      }
 
-      wrap.innerHTML = state.messages.map(msg => {
-        const member = state.members[msg.senderId];
-        if (!member) return '';
-
-        if (msg.type === 'alert') {
-          const alert = state.alerts.find(a => a.id === msg.alertId);
-          const hasRead = alert ? alert.acknowledgedBy.includes(currentSenderId) : true;
-          const pendingCount = alert ? state.members.length - alert.acknowledgedBy.length : 0;
-          const canAcknowledge = currentSenderId !== -1;
-          return `
-            <div class="msg alert">
-              <div class="msg-avatar" style="background:${member.color}">${member.initials}</div>
-              <div class="msg-body">
-                <div class="msg-meta">
-                  <span class="msg-name" style="color:${member.color}">${member.name}</span>
-                  <span class="msg-time">${msg.time}</span>
-                </div>
-                <div class="msg-text">
-                  ${escHtml(msg.text)}
-                  <div class="msg-alert-meta">
-                    <span class="alert-inline-badge">ALERT</span>
-                    <span class="meta-pill">${alert ? alert.acknowledgedBy.length : 0}/${state.members.length} read</span>
-                    <span class="meta-pill">${pendingCount} pending</span>
-                    <button class="ack-btn" onclick="acknowledgeAlert('${msg.alertId}')" ${hasRead || !canAcknowledge ? 'disabled' : ''}>
-                      ${hasRead ? 'Acknowledged' : 'Mark as Read'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          `;
+      const fragment = document.createDocumentFragment();
+      items.forEach(item => {
+        const id = String(itemId(item));
+        const signature = itemSignature(item);
+        const existingNode = currentNodesById.get(id);
+        if (existingNode && existingNode.dataset.renderSignature === signature) {
+          fragment.appendChild(existingNode);
+          return;
         }
 
-        if (msg.type === 'file') {
-          return `
-            <div class="msg file">
-              <div class="msg-avatar" style="background:${member.color}">${member.initials}</div>
-              <div class="msg-body">
-                <div class="msg-meta">
-                  <span class="msg-name" style="color:${member.color}">${member.name}</span>
-                  <span class="msg-time">${msg.time}</span>
-                </div>
-                <div class="msg-text">📁 ${escHtml(msg.text)}</div>
-              </div>
-            </div>
-          `;
+        const nextNode = createElementFromHtml(renderItemHtml(item, signature));
+        if (nextNode) {
+          fragment.appendChild(nextNode);
         }
+      });
 
+      container.innerHTML = '';
+      container.appendChild(fragment);
+      restoreListUiState(container, previousUiState);
+    }
+
+    function getChatAlertMeta(alertId, currentSenderId) {
+      const alert = state.alerts.find(a => a.id === alertId);
+      const hasRead = alert ? alert.acknowledgedBy.includes(currentSenderId) : true;
+      const acknowledgedCount = alert ? alert.acknowledgedBy.length : 0;
+      const pendingCount = Math.max(0, state.members.length - acknowledgedCount);
+      return { hasRead, pendingCount, acknowledgedCount };
+    }
+
+    function getMessageRenderSignature(msg, currentSenderId) {
+      if (msg.type === 'alert') {
+        const alertMeta = getChatAlertMeta(msg.alertId, currentSenderId);
+        return `${msg.id}|${msg.type}|${msg.text}|${msg.time}|${alertMeta.acknowledgedCount}|${alertMeta.hasRead}`;
+      }
+      return `${msg.id}|${msg.type}|${msg.text}|${msg.time}`;
+    }
+
+    function renderChatMessageHtml(msg, currentSenderId, signature) {
+      const member = state.members[msg.senderId];
+      if (!member) return '';
+
+      if (msg.type === 'alert') {
+        const { hasRead, pendingCount, acknowledgedCount } = getChatAlertMeta(msg.alertId, currentSenderId);
+        const canAcknowledge = currentSenderId !== -1;
         return `
-          <div class="msg">
+          <div class="msg alert" data-message-id="${msg.id}" data-render-signature="${escHtml(signature)}">
             <div class="msg-avatar" style="background:${member.color}">${member.initials}</div>
             <div class="msg-body">
               <div class="msg-meta">
                 <span class="msg-name" style="color:${member.color}">${member.name}</span>
                 <span class="msg-time">${msg.time}</span>
               </div>
-              <div class="msg-text">${escHtml(msg.text)}</div>
+              <div class="msg-text">
+                ${escHtml(msg.text)}
+                <div class="msg-alert-meta">
+                  <span class="alert-inline-badge">ALERT</span>
+                  <span class="meta-pill">${acknowledgedCount}/${state.members.length} read</span>
+                  <span class="meta-pill">${pendingCount} pending</span>
+                  <button class="ack-btn" onclick="acknowledgeAlert('${msg.alertId}')" ${hasRead || !canAcknowledge ? 'disabled' : ''}>
+                    ${hasRead ? 'Acknowledged' : 'Mark as Read'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         `;
-      }).join('');
+      }
 
-      wrap.scrollTop = wrap.scrollHeight;
+      if (msg.type === 'file') {
+        return `
+          <div class="msg file" data-message-id="${msg.id}" data-render-signature="${escHtml(signature)}">
+            <div class="msg-avatar" style="background:${member.color}">${member.initials}</div>
+            <div class="msg-body">
+              <div class="msg-meta">
+                <span class="msg-name" style="color:${member.color}">${member.name}</span>
+                <span class="msg-time">${msg.time}</span>
+              </div>
+              <div class="msg-text">📁 ${escHtml(msg.text)}</div>
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="msg" data-message-id="${msg.id}" data-render-signature="${escHtml(signature)}">
+          <div class="msg-avatar" style="background:${member.color}">${member.initials}</div>
+          <div class="msg-body">
+            <div class="msg-meta">
+              <span class="msg-name" style="color:${member.color}">${member.name}</span>
+              <span class="msg-time">${msg.time}</span>
+            </div>
+            <div class="msg-text">${escHtml(msg.text)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderChatMessages() {
+      const wrap = document.getElementById('chatMessages');
+      if (!wrap) return;
+      const currentSenderId = getCurrentMemberIndex();
+      const visibleMessages = state.messages.filter(msg => state.members[msg.senderId]);
+      if (visibleMessages.length === 0) {
+        wrap.innerHTML = `<div class="empty-state"><div class="emo">💬</div>No messages yet</div>`;
+        return;
+      }
+
+      const wasNearBottom = isNearBottom(wrap, 90);
+      const previousScrollTop = wrap.scrollTop;
+      const previousScrollHeight = wrap.scrollHeight;
+      const currentIds = Array.from(wrap.querySelectorAll('[data-message-id]')).map(node => node.dataset.messageId);
+      const nextIds = visibleMessages.map(msg => String(msg.id));
+      const appendOnly = currentIds.length > 0
+        && nextIds.length >= currentIds.length
+        && currentIds.every((id, index) => id === nextIds[index]);
+
+      if (appendOnly) {
+        const existingNodesById = new Map(
+          Array.from(wrap.querySelectorAll('[data-message-id]')).map(node => [node.dataset.messageId, node])
+        );
+
+        visibleMessages.forEach(msg => {
+          const signature = getMessageRenderSignature(msg, currentSenderId);
+          const id = String(msg.id);
+          const existingNode = existingNodesById.get(id);
+          if (existingNode) {
+            if (existingNode.dataset.renderSignature !== signature) {
+              const nextNode = createElementFromHtml(renderChatMessageHtml(msg, currentSenderId, signature));
+              if (nextNode) existingNode.replaceWith(nextNode);
+            }
+            return;
+          }
+
+          const nextNode = createElementFromHtml(renderChatMessageHtml(msg, currentSenderId, signature));
+          if (nextNode) wrap.appendChild(nextNode);
+        });
+      } else {
+        wrap.innerHTML = visibleMessages.map(msg => {
+          const signature = getMessageRenderSignature(msg, currentSenderId);
+          return renderChatMessageHtml(msg, currentSenderId, signature);
+        }).join('');
+      }
+
+      if (wasNearBottom) {
+        wrap.scrollTop = wrap.scrollHeight;
+      } else if (!appendOnly) {
+        const distanceFromBottom = previousScrollHeight - previousScrollTop;
+        wrap.scrollTop = Math.max(0, wrap.scrollHeight - distanceFromBottom);
+      }
     }
 
 
     function renderAlerts() {
       const activeAlerts = getDisplayAlerts();
       const scroller = document.getElementById('alertsScroller');
-
-      if (activeAlerts.length === 0) {
-        scroller.innerHTML = `<div class="empty-state"><div class="emo">🔕</div>No alerts yet</div>`;
-      } else {
-        scroller.innerHTML = activeAlerts.map(alert => {
+      patchKeyedList(scroller, activeAlerts, {
+        emptyHtml: `<div class="empty-state"><div class="emo">🔕</div>No alerts yet</div>`,
+        itemId: alert => alert.id,
+        itemSignature: alert => `${alert.id}|${alert.text}|${alert.time}|${alert.acknowledgedBy.join(',')}`,
+        renderItemHtml: (alert, signature) => {
           const member = state.members[alert.senderId];
-          if (!member) return '';
+          if (!member) return `<div class="alert-item" data-item-id="${alert.id}" data-render-signature="${escHtml(signature)}"></div>`;
           return `
-            <div class="alert-item">
+            <div class="alert-item" data-item-id="${alert.id}" data-render-signature="${escHtml(signature)}">
               <div class="alert-top">
                 <div class="alert-badge">🚨 Alert Notice</div>
                 <div class="alert-meta">${member.name}<br>${alert.time}</div>
@@ -177,8 +333,8 @@
               <div class="alert-footer">${alert.acknowledgedBy.length}/${state.members.length} members have acknowledged this alert.</div>
             </div>
           `;
-        }).join('');
-      }
+        }
+      });
 
       document.getElementById('alertSummaryChip').textContent = `${activeAlerts.length} alerts`;
     }
@@ -198,21 +354,19 @@
 
     function renderTaskList(targetId, items, showCompletedStatus) {
       const el = document.getElementById(targetId);
-
-      if (items.length === 0) {
-        el.innerHTML = `<div class="empty-state"><div class="emo">📝</div>No tasks to show</div>`;
-        return;
-      }
-
-      el.innerHTML = items.map(task => {
+      patchKeyedList(el, items, {
+        emptyHtml: `<div class="empty-state"><div class="emo">📝</div>No tasks to show</div>`,
+        itemId: task => task.id,
+        itemSignature: task => `${task.id}|${task.title}|${task.assigneeId}|${task.dueDate}|${task.priority}|${task.completed}|${task.completedAt || ''}`,
+        renderItemHtml: (task, signature) => {
         const member = state.members[task.assigneeId];
-        if (!member) return '';
+        if (!member) return `<div class="task-item ${task.completed ? 'done' : ''}" data-item-id="${task.id}" data-render-signature="${escHtml(signature)}"></div>`;
         const statusLabel = task.completed ? 'Completed' : 'In Progress';
         const priority = task.priority || 'Medium';
         const priorityClass = `priority-${priority.toLowerCase()}`;
 
         return `
-          <div class="task-item ${task.completed ? 'done' : ''}">
+          <div class="task-item ${task.completed ? 'done' : ''}" data-item-id="${task.id}" data-render-signature="${escHtml(signature)}">
             <div class="task-main">
               <div class="task-title">${escHtml(task.title)}</div>
               <div class="task-meta">
@@ -240,7 +394,8 @@
             </div>
           </div>
         `;
-      }).join('');
+        }
+      });
     }
 
 
@@ -386,34 +541,33 @@
         const matchesSearch = !query || resource.name.toLowerCase().includes(query);
         return matchesType && matchesSearch;
       });
-
-      if (filteredResources.length === 0) {
-        el.innerHTML = `<div class="empty-state"><div class="emo">📂</div>No matching files found</div>`;
-        return;
-      }
-
-      el.innerHTML = filteredResources.map(resource => {
-        const member = state.members[resource.senderId];
-        if (!member) return '';
-        return `
-          <div class="resource-item">
-            <div class="resource-main">
-              <div class="resource-icon">${resource.icon}</div>
-              <div>
-                <div class="resource-name">${escHtml(resource.name)}</div>
-                <div class="resource-meta">${resource.type} · ${resource.size} · Uploaded at ${resource.time}</div>
+      patchKeyedList(el, filteredResources, {
+        emptyHtml: `<div class="empty-state"><div class="emo">📂</div>No matching files found</div>`,
+        itemId: resource => resource.id,
+        itemSignature: resource => `${resource.id}|${resource.name}|${resource.type}|${resource.size}|${resource.time}|${resource.senderId}|${resource.storagePath || ''}`,
+        renderItemHtml: (resource, signature) => {
+          const member = state.members[resource.senderId];
+          if (!member) return `<div class="resource-item" data-item-id="${resource.id}" data-render-signature="${escHtml(signature)}"></div>`;
+          return `
+            <div class="resource-item" data-item-id="${resource.id}" data-render-signature="${escHtml(signature)}">
+              <div class="resource-main">
+                <div class="resource-icon">${resource.icon}</div>
+                <div>
+                  <div class="resource-name">${escHtml(resource.name)}</div>
+                  <div class="resource-meta">${resource.type} · ${resource.size} · Uploaded at ${resource.time}</div>
+                </div>
+              </div>
+              <div class="resource-actions">
+                ${resource.storagePath
+                  ? `<button class="btn btn-secondary btn-small" onclick="downloadResource('${resource.id}')">Download</button>`
+                  : ''
+                }
+                <div class="resource-by" style="background:${member.color}">${member.name}</div>
               </div>
             </div>
-            <div class="resource-actions">
-              ${resource.storagePath
-                ? `<button class="btn btn-secondary btn-small" onclick="downloadResource('${resource.id}')">Download</button>`
-                : ''
-              }
-              <div class="resource-by" style="background:${member.color}">${member.name}</div>
-            </div>
-          </div>
-        `;
-      }).join('');
+          `;
+        }
+      });
     }
 
 
